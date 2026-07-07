@@ -88,3 +88,6 @@ lint/tmp/
 .DS_Store
 /app/keystore/
 .idea/
+
+# Self-contained local build toolchain (JDK + Android SDK + Gradle home) — never push
+.toolchain/

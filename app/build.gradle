@@ -58,7 +58,9 @@ android {
                 storePassword "$keystoreProperties.storePassword"
                 keyAlias "$keystoreProperties.keyAlias"
                 keyPassword "$keystoreProperties.keyPassword"
-            } else {
+            } else if (System.getenv('KEYSTORE_FILE')) {
+                // Only wire release signing when a keystore is actually provided via env,
+                // иначе file(null) падает на конфигурации ещё до debug-сборки (path='null').
                 storeFile file(System.getenv('KEYSTORE_FILE'))
                 storePassword System.getenv('KEYSTORE_PASSWORD')
                 keyAlias System.getenv('RELEASE_SIGN_KEY_ALIAS')
@@ -93,20 +95,27 @@ android {
     // more: https://proandroiddev.com/advanced-android-flavors-part-4-a-new-version-fc2ad80c01bb
     flavorDimensions "default"
 
+    // Домашний Lampac-медиасервер (LAN). Зашит как стартовый адрес, чтобы приложение
+    // сразу открывало наш сервер (каталог + онлайн + торренты + кнопка «Скачать» из qdl.js),
+    // без диалога ввода URL при первом запуске. Меняешь сервер — правишь только эту строку.
+    def defaultServerUrl = "http://192.168.87.24:9118"
+
     productFlavors {
         lite {
-            buildConfigField "boolean", "enableUpdate", "true"
-            buildConfigField "String", "defaultAppUrl", "\"\""
+            // enableUpdate=false: наш форк — self-update тянет STOCK-APK из upstream
+            // (api.github.com/repos/lampa-app/LAMPA) и затёр бы зашитый адрес сервера. См. Updater.kt.
+            buildConfigField "boolean", "enableUpdate", "false"
+            buildConfigField "String", "defaultAppUrl", "\"${defaultServerUrl}\""
         }
         full {
             buildConfigField "boolean", "enableUpdate", "false"
-            buildConfigField "String", "defaultAppUrl", "\"\""
+            buildConfigField "String", "defaultAppUrl", "\"${defaultServerUrl}\""
         }
         ruStore {
             versionNameSuffix "-RuStore"
             minSdk 24 // minSdk RuStore.apk
             buildConfigField "boolean", "enableUpdate", "false"
-            buildConfigField "String", "defaultAppUrl", "\"http://lampa.mx\""
+            buildConfigField "String", "defaultAppUrl", "\"${defaultServerUrl}\""
         }
     }
 
