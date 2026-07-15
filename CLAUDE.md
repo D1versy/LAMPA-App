@@ -12,7 +12,7 @@
 ## Зачем форк / что изменено
 Задача: приложение под Android TV, которое **сразу** открывает наш сервер `http://192.168.87.24:9118` со всеми кодеками.
 
-**Все правки — в [app/build.gradle](app/build.gradle)** (upstream-код не трогали → лёгкий rebase):
+**Исторически все правки были в [app/build.gradle](app/build.gradle)** (upstream-код не трогали → лёгкий rebase). Теперь правок больше: `strings.xml` (ребренд `app_name`), `MainActivity`, `SysView`, `XWalk`, `helpers` (мульти-хост фолбек + UA-токен, см. раздел «Фолбек хостов и OTA» ниже). Исходные правки build.gradle:
 1. `def defaultServerUrl = "http://192.168.87.24:9118"` → в `BuildConfig.defaultAppUrl` всех флейворов. При первом запуске приложение грузит наш сервер без диалога ввода URL.
 2. Флейвор `lite`: **`enableUpdate=false`**. Иначе self-update тянет STOCK-APK из чужого upstream (`api.github.com/repos/lampa-app/LAMPA`, см. `helpers/Updater.kt`) и затирает наш зашитый адрес сервера. Гейт — `App.kt:113 if (BuildConfig.enableUpdate)`.
 3. Релизная `signingConfigs.release` обёрнута в `else if (System.getenv('KEYSTORE_FILE'))` — без keystore `file(null)` роняло даже debug-сборку.
@@ -20,6 +20,23 @@
 Больше ничего менять **не потребовалось**, потому что:
 - **Cleartext HTTP уже разрешён** — [network_security_config.xml](app/src/main/res/xml/network_security_config.xml) содержит `<base-config cleartextTrafficPermitted="true">`, так что `http://192.168.87.24:9118` (без TLS, LAN) работает из коробки.
 - **Кнопка «Скачать» из `qdl.js` появляется сама.** Приложение — это управляемый WebView, который грузит **удалённый** интерфейс с `appUrl` ([MainActivity.kt:391](app/src/main/java/top/rootu/lampa/MainActivity.kt#L391) `browser.loadUrl(LAMPA_URL)`). Т.е. оно открывает `index.html` НАШЕГО Lampac, а тот сервер-сайд авто-инжектит `/lampainit.js` → `/qdl.js`. Никаких ручных плагинов добавлять не нужно.
+
+## Фолбек хостов и OTA (D1Vision)
+Канонический документ по всей клиентской стратегии — **`E:\Media-server\claude\08-clients.md`**.
+
+**Хосты (приоритет перебора)**:
+1. кастомный адрес из настроек пользователя (если задан);
+2. `http://192.168.87.24:9118` — LAN, **primary** (пробуется первым при каждом старте — не залипаем на фолбеке);
+3. `http://tv.d1versy.com:9118` — фолбек №1 (DNS пока НЕ заведён, задел);
+4. `http://tv2.d1versy.com:9118` — фолбек №2 (DNS пока НЕ заведён, задел);
+5. хосты из OTA-кэша (`/d1vision/hosts.json`).
+
+**Как работает перебор**: при старте resolveHost пробует хосты по порядку — `GET <host>/lampainit.js`, таймаут 2.5 с, успех = HTTP 200; грузится первый живой. Если WebView падает с ошибкой загрузки — перебор продолжается со следующего хоста; диалог ошибки пользователю — только когда исчерпаны ВСЕ.
+
+- **`fallbackHosts` в [app/build.gradle](app/build.gradle)** — единственная точка bootstrap-списка хостов в бинаре.
+- **OTA-кэш**: после успешного старта клиент забирает `GET /d1vision/hosts.json` с сервера (`{"ver":1,"brand":"D1Vision","hosts":[...]}`), кэширует в SharedPreferences и на следующем запуске добавляет к bootstrap. ⚠️ OTA-список только **ДОПОЛНЯЕТ** зашитый bootstrap, никогда не заменяет (защита от «окирпичивания»).
+- **UA-токен**: приложение добавляет в User-Agent суффикс ` d1vision_android/<версия>` (прежний ` lampa_client` остаётся). Сервер по токену сам форсит `platform/player/player_torrent/player_iptv=android` + `internal_torrclient=true` (единая точка — `lampainit-invc.js` форка lampac, обновляется по воздуху).
+- **Ребренд**: `app_name = D1Vision` (`app/src/main/res/values/strings.xml`). ⚠️ `applicationId top.rootu.lampa` **НЕ менять** — смена пакета теряет данные пользователя (SharedPreferences).
 
 ## Кодеки = внешний плеер (важно понимать)
 Приложение **само видео НЕ декодирует**. Воспроизведение уходит во внешний плеер через `Intent(ACTION_VIEW)` ([AndroidJS.kt:432](app/src/main/java/top/rootu/lampa/AndroidJS.kt#L432) `openPlayer` → `MainActivity.runPlayer`). Fallback — HTML5-плеер внутри WebView (кодеки ограничены: обычно нет AC3/EAC3/DTS).
@@ -64,7 +81,7 @@ adb install -r app/build/outputs/apk/lite/debug/app-lite-debug.apk
 
 ## Гочи
 - Стартовый адрес — **дефолт**, а не жёсткая привязка. Если приложение уже запускалось со старым URL, он лежит в SharedPreferences (`settings/url`) и перебивает дефолт → очистить данные приложения или сменить сервер в диалоге (меню в интерфейсе).
-- Меняется адрес сервера — правится одна строка `defaultServerUrl` в [app/build.gradle](app/build.gradle), пересборка.
+- Меняется/добавляется адрес сервера — либо `clientHosts` в `init.conf` сервера (OTA, без пересборки), либо bootstrap `fallbackHosts` в [app/build.gradle](app/build.gradle) + пересборка. См. раздел «Фолбек хостов и OTA».
 - Полная база знаний — [claude/README.md](claude/README.md).
 
 ## Правила (наследуются от основного репо)

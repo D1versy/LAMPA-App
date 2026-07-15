@@ -28,6 +28,9 @@ import top.rootu.lampa.MainActivity
 import top.rootu.lampa.R
 import top.rootu.lampa.helpers.Helpers.isTelegramInstalled
 import top.rootu.lampa.helpers.Helpers.debugLog
+import top.rootu.lampa.helpers.ErrorHtml
+import top.rootu.lampa.helpers.HostResolver
+import top.rootu.lampa.helpers.Prefs.appUrl
 import top.rootu.lampa.helpers.getNetworkErrorString
 import top.rootu.lampa.helpers.isAttachedToWindowCompat
 
@@ -181,11 +184,24 @@ class SysView(override val mainActivity: MainActivity, override val viewResId: I
                         val noInternetErr = "net::ERR_INTERNET_DISCONNECTED"
                         if (error.description == noInternetErr) {
                             val html =
-                                createErrorHtmlPage(view.context.getNetworkErrorString(noInternetErr))
+                                ErrorHtml.createErrorHtmlPage(view.context.getNetworkErrorString(noInternetErr))
                             view.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
                             view.invalidate()
-                        } else
-                            mainActivity.showUrlInputDialog(msg)
+                        } else {
+                            // D1Vision: сервер лежит — пробуем следующий хост из кандидатов,
+                            // диалог ввода URL только когда список исчерпан
+                            val next = HostResolver.nextHost(view.context, MainActivity.LAMPA_URL)
+                            if (next != null) {
+                                MainActivity.LAMPA_URL = next // в памяти; Prefs.appUrl не трогаем
+                                view.loadUrl(next)
+                            } else {
+                                // Кандидаты исчерпаны — откатываем LAMPA_URL на сохранённый адрес
+                                // пользователя. Иначе фолбек-хост (жил только в памяти) попадёт в
+                                // префилл диалога и по Save утечёт в Prefs.appUrl навсегда.
+                                MainActivity.LAMPA_URL = view.context.appUrl
+                                mainActivity.showUrlInputDialog(msg)
+                            }
+                        }
                     }
                 }
             }
@@ -207,12 +223,24 @@ class SysView(override val mainActivity: MainActivity, override val viewResId: I
                     if (description == noInternetErr) {
                         view?.apply {
                             val html =
-                                createErrorHtmlPage(this.context.getNetworkErrorString(noInternetErr))
+                                ErrorHtml.createErrorHtmlPage(this.context.getNetworkErrorString(noInternetErr))
                             loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
                             invalidate()
                         }
-                    } else
-                        mainActivity.showUrlInputDialog(msg)
+                    } else {
+                        // D1Vision: сервер лежит — пробуем следующий хост из кандидатов,
+                        // диалог ввода URL только когда список исчерпан
+                        val next = HostResolver.nextHost(App.context, MainActivity.LAMPA_URL)
+                        if (next != null) {
+                            MainActivity.LAMPA_URL = next // в памяти; Prefs.appUrl не трогаем
+                            view?.loadUrl(next)
+                        } else {
+                            // Кандидаты исчерпаны — откатываем LAMPA_URL на сохранённый адрес
+                            // пользователя, чтобы фолбек-хост не утёк в Prefs.appUrl по Save.
+                            MainActivity.LAMPA_URL = App.context.appUrl
+                            mainActivity.showUrlInputDialog(msg)
+                        }
+                    }
                 }
             }
 
@@ -321,34 +349,5 @@ class SysView(override val mainActivity: MainActivity, override val viewResId: I
 
     override fun getView(): View? {
         return browser
-    }
-
-    private fun createErrorHtmlPage(
-        errorMessage: String,
-        iconColor: String = "#D72828",
-        textColor: String = "#E6E6E6"
-    ): String {
-        return """
-        <html>
-            <body style="margin:0;padding:0;overflow:hidden;">
-                <div style="display:table;width:100%;height:100vh;overflow:hidden;">
-                    <div align="center" style="display:table-cell;vertical-align:middle;">
-                        <svg width="120" height="120" 
-                             style="overflow:visible;enable-background:new 0 0 120 120" 
-                             viewBox="0 0 32 32" 
-                             xmlns="http://www.w3.org/2000/svg">
-                            <g>
-                                <circle cx="16" cy="16" r="16" style="fill:$iconColor;"/>
-                                <path d="M14.5,25h3v-3h-3V25z M14.5,6v13h3V6H14.5z" 
-                                      style="fill:$textColor;"/>
-                            </g>
-                        </svg>
-                        <br/><br/>
-                        <p style="color:$textColor;">$errorMessage</p>
-                    </div>
-                </div>
-            </body>
-        </html>
-        """.trimIndent()
     }
 }

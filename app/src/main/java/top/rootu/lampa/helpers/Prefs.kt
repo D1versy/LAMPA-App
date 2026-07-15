@@ -66,6 +66,12 @@ object Prefs {
         get() = appPrefs.getString(APP_URL, BuildConfig.defaultAppUrl) ?: ""
         set(url) = appPrefs.edit().putString(APP_URL, url).apply()
 
+    // D1Vision: true, если пользователь ЯВНО сохранял адрес сервера (ключ APP_URL
+    // записан), а не работает на зашитом дефолте. Нужно, чтобы кастом, совпадающий
+    // с bootstrap-хостом, всё равно получал высший приоритет (см. HostResolver).
+    val Context.hasUserUrl: Boolean
+        get() = appPrefs.contains(APP_URL)
+
     var Context.appPlayer: String?
         get() = appPrefs.getString(APP_PLAYER, "")
         set(player) = appPrefs.edit().putString(APP_PLAYER, player).apply()

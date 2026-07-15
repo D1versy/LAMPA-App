@@ -6,6 +6,9 @@ import org.xwalk.core.XWalkView
 import top.rootu.lampa.App
 import top.rootu.lampa.MainActivity
 import top.rootu.lampa.R
+import top.rootu.lampa.helpers.ErrorHtml
+import top.rootu.lampa.helpers.HostResolver
+import top.rootu.lampa.helpers.Prefs.appUrl
 import top.rootu.lampa.helpers.getNetworkErrorString
 
 class XWalk(override val mainActivity: MainActivity, override val viewResId: Int) : Browser {
@@ -35,7 +38,29 @@ class XWalk(override val mainActivity: MainActivity, override val viewResId: Int
                             val reason = App.context.getNetworkErrorString(description.toString())
                             val msg =
                                 "${view?.context?.getString(R.string.download_failed_message)} ${MainActivity.LAMPA_URL} – $reason"
-                            mainActivity.showUrlInputDialog(msg)
+                            // D1Vision: сети нет вообще — перебор хостов бессмыслен; показываем
+                            // ту же страницу-заглушку, что и SysView, и выходим (симметрия с SysView).
+                            val noInternetErr = "net::ERR_INTERNET_DISCONNECTED"
+                            if (description == noInternetErr) {
+                                val html = ErrorHtml.createErrorHtmlPage(
+                                    App.context.getNetworkErrorString(noInternetErr)
+                                )
+                                view?.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+                            } else {
+                                // Сервер лежит — пробуем следующий хост из кандидатов,
+                                // диалог ввода URL только когда список исчерпан
+                                val next =
+                                    HostResolver.nextHost(App.context, MainActivity.LAMPA_URL)
+                                if (next != null) {
+                                    MainActivity.LAMPA_URL = next // в памяти; Prefs.appUrl не трогаем
+                                    view?.loadUrl(next)
+                                } else {
+                                    // Кандидаты исчерпаны — откатываем LAMPA_URL на сохранённый
+                                    // адрес пользователя, чтобы фолбек-хост не утёк в Prefs.appUrl.
+                                    MainActivity.LAMPA_URL = App.context.appUrl
+                                    mainActivity.showUrlInputDialog(msg)
+                                }
+                            }
                         }
                     }
                 })

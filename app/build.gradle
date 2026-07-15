@@ -100,22 +100,30 @@ android {
     // без диалога ввода URL при первом запуске. Меняешь сервер — правишь только эту строку.
     def defaultServerUrl = "http://192.168.87.24:9118"
 
+    // Bootstrap-хосты D1Vision в порядке приоритета (comma-separated, БЕЗ пробелов).
+    // Первый = defaultServerUrl (LAN); tv/tv2.d1versy.com пока не существуют в DNS —
+    // задел на будущее, мгновенный NXDOMAIN при пробе не мешает. Перебор — helpers/HostResolver.kt.
+    def fallbackHosts = "http://192.168.87.24:9118,http://tv.d1versy.com:9118,http://tv2.d1versy.com:9118"
+
     productFlavors {
         lite {
             // enableUpdate=false: наш форк — self-update тянет STOCK-APK из upstream
             // (api.github.com/repos/lampa-app/LAMPA) и затёр бы зашитый адрес сервера. См. Updater.kt.
             buildConfigField "boolean", "enableUpdate", "false"
             buildConfigField "String", "defaultAppUrl", "\"${defaultServerUrl}\""
+            buildConfigField "String", "fallbackHosts", "\"${fallbackHosts}\""
         }
         full {
             buildConfigField "boolean", "enableUpdate", "false"
             buildConfigField "String", "defaultAppUrl", "\"${defaultServerUrl}\""
+            buildConfigField "String", "fallbackHosts", "\"${fallbackHosts}\""
         }
         ruStore {
             versionNameSuffix "-RuStore"
             minSdk 24 // minSdk RuStore.apk
             buildConfigField "boolean", "enableUpdate", "false"
             buildConfigField "String", "defaultAppUrl", "\"${defaultServerUrl}\""
+            buildConfigField "String", "fallbackHosts", "\"${fallbackHosts}\""
         }
     }
 

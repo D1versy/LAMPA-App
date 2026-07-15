@@ -87,6 +87,7 @@ import top.rootu.lampa.helpers.Helpers.getJson
 import top.rootu.lampa.helpers.Helpers.isAndroidTV
 import top.rootu.lampa.helpers.Helpers.isTvContentProviderAvailable
 import top.rootu.lampa.helpers.Helpers.isValidJson
+import top.rootu.lampa.helpers.HostResolver
 import top.rootu.lampa.helpers.PermHelpers
 import top.rootu.lampa.helpers.PermHelpers.hasMicPermissions
 import top.rootu.lampa.helpers.PermHelpers.isInstallPermissionDeclared
@@ -376,7 +377,9 @@ class MainActivity : BaseActivity(),
 
     override fun onBrowserInitCompleted() {
         browserInitComplete = true
-        HttpHelper.userAgent = browser?.getUserAgentString() + " lampa_client"
+        // Токен D1Vision — строго ПОСЛЕ lampa_client (единый контракт клиентов D1Vision)
+        HttpHelper.userAgent = browser?.getUserAgentString() +
+                " lampa_client d1vision_android/${BuildConfig.VERSION_NAME}-${BuildConfig.VERSION_CODE}"
         browser?.apply {
             setUserAgentString(HttpHelper.userAgent)
             setBackgroundColor(ContextCompat.getColor(baseContext, R.color.lampa_background))
@@ -387,8 +390,14 @@ class MainActivity : BaseActivity(),
             logDebug("onBrowserInitCompleted showUrlInputDialog")
             showUrlInputDialog()
         } else {
-            logDebug("onBrowserInitCompleted load $LAMPA_URL")
-            browser?.loadUrl(LAMPA_URL)
+            // D1Vision: резолвим живой хост в фоне (проба до 2.5с на кандидата — main не блокируем),
+            // loadUrl — на main. LAMPA_URL меняется только в памяти,
+            // Prefs.appUrl не перезаписываем — уважение выбора пользователя.
+            lifecycleScope.launch {
+                LAMPA_URL = withContext(Dispatchers.IO) { HostResolver.resolve(baseContext) }
+                logDebug("onBrowserInitCompleted load $LAMPA_URL")
+                browser?.loadUrl(LAMPA_URL)
+            }
         }
     }
 
@@ -411,6 +420,12 @@ class MainActivity : BaseActivity(),
         }
         // Hack to skip reload from Back history
         if (url.trimEnd('/').equals(LAMPA_URL, true)) {
+            // D1Vision: страница загрузилась — сброс перебора хостов
+            // и фоновое обновление OTA-списка (ошибки глотаются внутри)
+            HostResolver.resetFailover()
+            lifecycleScope.launch(Dispatchers.IO) {
+                HostResolver.fetchOtaHosts(baseContext, LAMPA_URL)
+            }
             // 1s delay after deep link to load content and after storage listener setup
             val waitDelay = 1000L
             // Lazy Load Intent
@@ -1715,6 +1730,9 @@ class MainActivity : BaseActivity(),
         LAMPA_URL = input?.text.toString()
         if (isValidUrl(LAMPA_URL)) {
             Log.d(TAG, "URL '$LAMPA_URL' is valid")
+            // D1Vision: ручная смена/подтверждение URL — сбрасываем очередь перебора,
+            // чтобы старый failover не увёл загрузку на другой хост
+            HostResolver.resetFailover()
             if (appUrl != LAMPA_URL) {
                 appUrl = LAMPA_URL
                 addUrlHistory(LAMPA_URL)

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name" translatable="false">LAMPA</string>
+    <string name="app_name" translatable="false">D1Vision</string>
     <string name="provider_auth" translatable="false">top.rootu.lampa</string>
     <string name="no_activity_found">There is no application to open this type of link.</string>
     <string name="no_player_activity_found">No matching multimedia player found. Please, install player from Google Play Store or any other source. We recommend Just Player, Vimu Media Player, VLC.</string>
