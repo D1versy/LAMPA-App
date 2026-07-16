@@ -107,20 +107,22 @@ android {
 
     productFlavors {
         lite {
-            // enableUpdate=false: наш форк — self-update тянет STOCK-APK из upstream
-            // (api.github.com/repos/lampa-app/LAMPA) и затёр бы зашитый адрес сервера. См. Updater.kt.
-            buildConfigField "boolean", "enableUpdate", "false"
+            // enableUpdate=true: D1Vision OTA — self-update тянет НАШ APK с сервера Lampac
+            // (<host>/d1vision/apps/android/manifest.json), а не upstream GitHub. См. Updater.kt.
+            buildConfigField "boolean", "enableUpdate", "true"
             buildConfigField "String", "defaultAppUrl", "\"${defaultServerUrl}\""
             buildConfigField "String", "fallbackHosts", "\"${fallbackHosts}\""
         }
         full {
-            buildConfigField "boolean", "enableUpdate", "false"
+            buildConfigField "boolean", "enableUpdate", "true"
             buildConfigField "String", "defaultAppUrl", "\"${defaultServerUrl}\""
             buildConfigField "String", "fallbackHosts", "\"${fallbackHosts}\""
         }
         ruStore {
             versionNameSuffix "-RuStore"
             minSdk 24 // minSdk RuStore.apk
+            // enableUpdate=false: в RuStore-сборке удалён REQUEST_INSTALL_PACKAGES (запрет self-install) —
+            // обновление идёт через магазин RuStore, а не через наш OTA.
             buildConfigField "boolean", "enableUpdate", "false"
             buildConfigField "String", "defaultAppUrl", "\"${defaultServerUrl}\""
             buildConfigField "String", "fallbackHosts", "\"${fallbackHosts}\""
