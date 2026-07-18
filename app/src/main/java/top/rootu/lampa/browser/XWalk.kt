@@ -6,6 +6,7 @@ import org.xwalk.core.XWalkView
 import top.rootu.lampa.App
 import top.rootu.lampa.MainActivity
 import top.rootu.lampa.R
+import top.rootu.lampa.helpers.D1VAuth
 import top.rootu.lampa.helpers.ErrorHtml
 import top.rootu.lampa.helpers.HostResolver
 import top.rootu.lampa.helpers.Prefs.appUrl
@@ -53,12 +54,11 @@ class XWalk(override val mainActivity: MainActivity, override val viewResId: Int
                                     HostResolver.nextHost(App.context, MainActivity.LAMPA_URL)
                                 if (next != null) {
                                     MainActivity.LAMPA_URL = next // в памяти; Prefs.appUrl не трогаем
-                                    view?.loadUrl(next)
+                                    view?.loadUrl(D1VAuth.sign(next) ?: next)
                                 } else {
-                                    // Кандидаты исчерпаны — откатываем LAMPA_URL на сохранённый
-                                    // адрес пользователя, чтобы фолбек-хост не утёк в Prefs.appUrl.
+                                    // Кандидаты исчерпаны — экран «Сервер недоступен» + авто-переподключение.
                                     MainActivity.LAMPA_URL = App.context.appUrl
-                                    mainActivity.showUrlInputDialog(msg)
+                                    view?.let { showServerUnavailable(it) }
                                 }
                             }
                         }
@@ -67,6 +67,43 @@ class XWalk(override val mainActivity: MainActivity, override val viewResId: Int
                 mainActivity.onBrowserInitCompleted()
             }
         }
+    }
+
+    // D1Vision: идёт ли цикл авто-переподключения (экран «Сервер недоступен»).
+    private var reconnecting = false
+
+    private companion object {
+        const val RECONNECT_INTERVAL_MS = 5000L
+    }
+
+    /** Экран «Сервер недоступен» + нативный цикл переподключения (симметрия с SysView). */
+    private fun showServerUnavailable(view: XWalkView) {
+        view.loadDataWithBaseURL(null, ErrorHtml.createServerUnavailablePage(), "text/html", "UTF-8", null)
+        if (!reconnecting) {
+            reconnecting = true
+            scheduleReconnect(view)
+        }
+    }
+
+    private fun scheduleReconnect(view: XWalkView) {
+        if (isDestroyed) { reconnecting = false; return }
+        view.postDelayed({
+            if (isDestroyed) { reconnecting = false; return@postDelayed }
+            Thread {
+                val live = try { HostResolver.resolveLiveOrNull(view.context) } catch (_: Exception) { null }
+                view.post {
+                    if (isDestroyed) { reconnecting = false; return@post }
+                    if (live != null) {
+                        reconnecting = false
+                        MainActivity.LAMPA_URL = live
+                        HostResolver.resetFailover()
+                        view.loadUrl(D1VAuth.sign(live) ?: live)
+                    } else {
+                        scheduleReconnect(view)
+                    }
+                }
+            }.start()
+        }, RECONNECT_INTERVAL_MS)
     }
 
     override fun setUserAgentString(ua: String?) {

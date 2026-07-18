@@ -66,8 +66,9 @@ object HostResolver {
 
     /** Проба хоста: GET <host>/lampainit.js, успех = HTTP 200. Звать только с фонового потока. */
     fun probe(host: String): Boolean = try {
+        // Ключ в query обязателен: внешняя проба без него получит 404 и хост сочтётся мёртвым.
         val request = Request.Builder()
-            .url("$host/lampainit.js")
+            .url(D1VAuth.sign("$host/lampainit.js"))
             .header("User-Agent", HttpHelper.userAgent)
             .build()
         HttpHelper.getOkHttpClient(PROBE_TIMEOUT_MS).newCall(request).execute()
@@ -87,6 +88,15 @@ object HostResolver {
             ?: candidates.firstOrNull()
             ?: normalize(context.appUrl)
     }
+
+    /**
+     * D1Vision: первый ЖИВОЙ хост из кандидатов или null, если не ответил НИ ОДИН.
+     * В отличие от [resolve] не возвращает мёртвый фолбек — нужен для экрана
+     * «Сервер недоступен»: пробуем переподключиться, грузим только реально живой хост.
+     * Звать только с фонового потока (сеть).
+     */
+    fun resolveLiveOrNull(context: Context): String? =
+        buildCandidates(context).firstOrNull { probe(it) }
 
     /**
      * Перебор при ошибке загрузки: следующий кандидат после [failedUrl];
@@ -119,7 +129,7 @@ object HostResolver {
     fun fetchOtaHosts(context: Context, activeHost: String) {
         try {
             val request = Request.Builder()
-                .url("${normalize(activeHost)}/d1vision/hosts.json")
+                .url(D1VAuth.sign("${normalize(activeHost)}/d1vision/hosts.json"))
                 .header("User-Agent", HttpHelper.userAgent)
                 .build()
             HttpHelper.getOkHttpClient(0).newCall(request).execute().use { response ->

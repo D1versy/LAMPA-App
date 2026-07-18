@@ -87,6 +87,7 @@ import top.rootu.lampa.helpers.Helpers.getJson
 import top.rootu.lampa.helpers.Helpers.isAndroidTV
 import top.rootu.lampa.helpers.Helpers.isTvContentProviderAvailable
 import top.rootu.lampa.helpers.Helpers.isValidJson
+import top.rootu.lampa.helpers.D1VAuth
 import top.rootu.lampa.helpers.HostResolver
 import top.rootu.lampa.helpers.PermHelpers
 import top.rootu.lampa.helpers.PermHelpers.hasMicPermissions
@@ -396,7 +397,9 @@ class MainActivity : BaseActivity(),
             lifecycleScope.launch {
                 LAMPA_URL = withContext(Dispatchers.IO) { HostResolver.resolve(baseContext) }
                 logDebug("onBrowserInitCompleted load $LAMPA_URL")
-                browser?.loadUrl(LAMPA_URL)
+                // Подписываем стартовую навигацию: сервер пересадит ключ в cookie,
+                // дальше CookieManager несёт её сам. LAMPA_URL в памяти оставляем чистым.
+                browser?.loadUrl(D1VAuth.sign(LAMPA_URL) ?: LAMPA_URL)
             }
         }
     }
@@ -1736,10 +1739,10 @@ class MainActivity : BaseActivity(),
             if (appUrl != LAMPA_URL) {
                 appUrl = LAMPA_URL
                 addUrlHistory(LAMPA_URL)
-                browser?.loadUrl(LAMPA_URL)
+                browser?.loadUrl(D1VAuth.sign(LAMPA_URL) ?: LAMPA_URL)
                 App.toast(R.string.change_url_press_back)
             } else {
-                browser?.loadUrl(LAMPA_URL) // Reload current URL
+                browser?.loadUrl(D1VAuth.sign(LAMPA_URL) ?: LAMPA_URL) // Reload current URL
             }
         } else {
             Log.d(TAG, "URL '$LAMPA_URL' is invalid")
@@ -2270,7 +2273,11 @@ class MainActivity : BaseActivity(),
                 )
             }
             state?.let {
-                createBaseIntent(it)?.let {
+                // Периметр: внешний плеер не несёт cookie WebView — ключ нужен в самом URL.
+                // Подписываем ОТДЕЛЬНУЮ копию state для плеера (наши хосты), оригинал в кэше
+                // остаётся чистым — иначе сломается матчинг при resume (Lampa шлёт URL без ключа).
+                val playbackState = signStateForPlayback(it)
+                createBaseIntent(playbackState)?.let {
                     // Get available players
                     val availablePlayers =
                         getAvailablePlayers(it).takeIf { it.isNotEmpty() } ?: run {
@@ -2287,7 +2294,7 @@ class MainActivity : BaseActivity(),
                             selectedPlayer,
                             videoTitle,
                             isIPTV,
-                            state,
+                            playbackState,
                             headers
                         )
                         // Launch Player
@@ -2306,6 +2313,26 @@ class MainActivity : BaseActivity(),
     private fun getHeadersFromState(state: PlayerStateManager.PlaybackState): Array<String>? {
         return (state.extras["headers_array"] as? List<*>)?.filterIsInstance<String>()
             ?.toTypedArray()
+    }
+
+    /**
+     * D1Vision: копия state, где все медиа/субтитр/quality-URL подписаны ключом периметра
+     * (D1VAuth.sign — только наши хосты). Отдаётся ТОЛЬКО в плеер; оригинал в кэше состояний
+     * не трогаем, иначе сломается сопоставление при resume (Lampa присылает URL без ключа).
+     */
+    private fun signStateForPlayback(
+        state: PlayerStateManager.PlaybackState,
+    ): PlayerStateManager.PlaybackState {
+        if (D1VAuth.key.isEmpty()) return state
+        fun s(url: String) = D1VAuth.sign(url) ?: url
+        val signedPlaylist = state.playlist.map { item ->
+            item.copy(
+                url = s(item.url),
+                quality = item.quality?.mapValues { (_, v) -> s(v) },
+                subtitles = item.subtitles?.map { sub -> sub.copy(url = s(sub.url)) }
+            )
+        }
+        return state.copy(playlist = signedPlaylist)
     }
 
     private fun createBaseIntent(

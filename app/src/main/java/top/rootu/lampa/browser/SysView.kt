@@ -26,6 +26,7 @@ import top.rootu.lampa.App
 import top.rootu.lampa.BuildConfig
 import top.rootu.lampa.MainActivity
 import top.rootu.lampa.R
+import top.rootu.lampa.helpers.D1VAuth
 import top.rootu.lampa.helpers.Helpers.isTelegramInstalled
 import top.rootu.lampa.helpers.Helpers.debugLog
 import top.rootu.lampa.helpers.ErrorHtml
@@ -39,8 +40,46 @@ class SysView(override val mainActivity: MainActivity, override val viewResId: I
     private var browser: WebView? = null
     override var isDestroyed = false
 
+    // D1Vision: идёт ли цикл авто-переподключения к серверу (экран «Сервер недоступен»).
+    private var reconnecting = false
+
     companion object {
         const val LOG_TAG = "WEB CONSOLE"
+        private const val RECONNECT_INTERVAL_MS = 5000L
+    }
+
+    /**
+     * Показать экран «Сервер недоступен» и запустить нативный цикл переподключения
+     * (перепроба LAN → tv → tv2 каждые 5с; как только хост ожил — грузим его).
+     */
+    private fun showServerUnavailable(view: WebView) {
+        view.loadDataWithBaseURL(null, ErrorHtml.createServerUnavailablePage(), "text/html", "UTF-8", null)
+        view.invalidate()
+        if (!reconnecting) {
+            reconnecting = true
+            scheduleReconnect(view)
+        }
+    }
+
+    private fun scheduleReconnect(view: WebView) {
+        if (isDestroyed) { reconnecting = false; return }
+        view.postDelayed({
+            if (isDestroyed) { reconnecting = false; return@postDelayed }
+            Thread {
+                val live = try { HostResolver.resolveLiveOrNull(view.context) } catch (_: Exception) { null }
+                view.post {
+                    if (isDestroyed) { reconnecting = false; return@post }
+                    if (live != null) {
+                        reconnecting = false
+                        MainActivity.LAMPA_URL = live
+                        HostResolver.resetFailover()
+                        view.loadUrl(D1VAuth.sign(live) ?: live)
+                    } else {
+                        scheduleReconnect(view) // сервер ещё не поднялся — пробуем снова
+                    }
+                }
+            }.start()
+        }, RECONNECT_INTERVAL_MS)
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -193,13 +232,12 @@ class SysView(override val mainActivity: MainActivity, override val viewResId: I
                             val next = HostResolver.nextHost(view.context, MainActivity.LAMPA_URL)
                             if (next != null) {
                                 MainActivity.LAMPA_URL = next // в памяти; Prefs.appUrl не трогаем
-                                view.loadUrl(next)
+                                view.loadUrl(D1VAuth.sign(next) ?: next)
                             } else {
-                                // Кандидаты исчерпаны — откатываем LAMPA_URL на сохранённый адрес
-                                // пользователя. Иначе фолбек-хост (жил только в памяти) попадёт в
-                                // префилл диалога и по Save утечёт в Prefs.appUrl навсегда.
+                                // Кандидаты исчерпаны — экран «Сервер недоступен» + авто-переподключение
+                                // (вместо чёрного экрана/диалога). LAMPA_URL откатываем на сохранённый.
                                 MainActivity.LAMPA_URL = view.context.appUrl
-                                mainActivity.showUrlInputDialog(msg)
+                                showServerUnavailable(view)
                             }
                         }
                     }
@@ -233,12 +271,11 @@ class SysView(override val mainActivity: MainActivity, override val viewResId: I
                         val next = HostResolver.nextHost(App.context, MainActivity.LAMPA_URL)
                         if (next != null) {
                             MainActivity.LAMPA_URL = next // в памяти; Prefs.appUrl не трогаем
-                            view?.loadUrl(next)
+                            view?.loadUrl(D1VAuth.sign(next) ?: next)
                         } else {
-                            // Кандидаты исчерпаны — откатываем LAMPA_URL на сохранённый адрес
-                            // пользователя, чтобы фолбек-хост не утёк в Prefs.appUrl по Save.
+                            // Кандидаты исчерпаны — экран «Сервер недоступен» + авто-переподключение.
                             MainActivity.LAMPA_URL = App.context.appUrl
-                            mainActivity.showUrlInputDialog(msg)
+                            view?.let { showServerUnavailable(it) }
                         }
                     }
                 }

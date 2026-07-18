@@ -45,6 +45,14 @@ android {
         multiDexEnabled = true // required when setting minSdkVersion to 20 or lower
         // Use SupportLibrary for vectors
         vectorDrawables.useSupportLibrary = true
+
+        // D1Vision: ключ периметра — из local.properties (gitignored), НЕ коммитить.
+        // Строка вида: D1V_KEY_ANDROID=<hex64>. Должен совпадать с d1v.keys.android в init.conf.
+        // Пусто → внешний доступ не заработает (в LAN всё равно всё открыто).
+        def d1vProps = new Properties()
+        def d1vFile = rootProject.file("local.properties")
+        if (d1vFile.exists()) d1vFile.withInputStream { d1vProps.load(it) }
+        buildConfigField "String", "d1vKey", "\"${d1vProps.getProperty('D1V_KEY_ANDROID', '')}\""
     }
 
     signingConfigs {
@@ -103,7 +111,7 @@ android {
     // Bootstrap-хосты D1Vision в порядке приоритета (comma-separated, БЕЗ пробелов).
     // Первый = defaultServerUrl (LAN); tv/tv2.d1versy.com пока не существуют в DNS —
     // задел на будущее, мгновенный NXDOMAIN при пробе не мешает. Перебор — helpers/HostResolver.kt.
-    def fallbackHosts = "http://192.168.87.24:9118,http://tv.d1versy.com:9118,http://tv2.d1versy.com:9118"
+    def fallbackHosts = "http://192.168.87.24:9118,https://tv.d1versy.com:9443,https://tv2.d1versy.com:9443"
 
     productFlavors {
         lite {

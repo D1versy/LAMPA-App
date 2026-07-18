@@ -34,4 +34,37 @@ object ErrorHtml {
         </html>
         """.trimIndent()
     }
+
+    /**
+     * D1Vision: экран «Сервер недоступен» — показывается, когда НИ ОДИН хост
+     * (LAN → tv → tv2) не ответил. Тёмный фон (иначе на ТВ мелькает белым),
+     * спиннер + текст автопереподключения. Реконнект делается НАТИВНО
+     * (перепроба хостов), а не в этой странице — тут только сообщение.
+     */
+    fun createServerUnavailablePage(
+        title: String = "Сервер недоступен",
+        subtitle: String = "Не удаётся подключиться ни к одному адресу. Пытаемся переподключиться…"
+    ): String {
+        return """
+        <html>
+            <head><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
+            <body style="margin:0;padding:0;overflow:hidden;background:#101114;font-family:sans-serif;">
+                <style>
+                    @keyframes d1vspin{to{transform:rotate(360deg)}}
+                    .d1vspin{width:56px;height:56px;border:5px solid #2a2c31;
+                        border-top-color:#4a90d9;border-radius:50%;
+                        animation:d1vspin 1s linear infinite;margin:0 auto;}
+                </style>
+                <div style="display:table;width:100%;height:100vh;">
+                    <div align="center" style="display:table-cell;vertical-align:middle;padding:0 24px;">
+                        <div class="d1vspin"></div>
+                        <br/>
+                        <p style="color:#E6E6E6;font-size:26px;font-weight:600;margin:8px 0;">$title</p>
+                        <p style="color:#9AA0A6;font-size:16px;margin:0;">$subtitle</p>
+                    </div>
+                </div>
+            </body>
+        </html>
+        """.trimIndent()
+    }
 }

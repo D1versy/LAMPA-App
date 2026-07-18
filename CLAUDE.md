@@ -14,7 +14,7 @@
 
 **Исторически все правки были в [app/build.gradle](app/build.gradle)** (upstream-код не трогали → лёгкий rebase). Теперь правок больше: `strings.xml` (ребренд `app_name`), `MainActivity`, `SysView`, `XWalk`, `helpers` (мульти-хост фолбек + UA-токен, см. раздел «Фолбек хостов и OTA» ниже). Исходные правки build.gradle:
 1. `def defaultServerUrl = "http://192.168.87.24:9118"` → в `BuildConfig.defaultAppUrl` всех флейворов. При первом запуске приложение грузит наш сервер без диалога ввода URL.
-2. Флейвор `lite`: **`enableUpdate=false`**. Иначе self-update тянет STOCK-APK из чужого upstream (`api.github.com/repos/lampa-app/LAMPA`, см. `helpers/Updater.kt`) и затирает наш зашитый адрес сервера. Гейт — `App.kt:113 if (BuildConfig.enableUpdate)`.
+2. Флейвор `lite`/`full`: **`enableUpdate=true`** — self-update теперь тянет НАШ APK с сервера Lampac (не upstream GitHub), см. раздел «OTA-самообновление» ниже. `ruStore` — `false` (там удалён `REQUEST_INSTALL_PACKAGES`, обновление через магазин). Гейт — `App.kt:113 if (BuildConfig.enableUpdate)`.
 3. Релизная `signingConfigs.release` обёрнута в `else if (System.getenv('KEYSTORE_FILE'))` — без keystore `file(null)` роняло даже debug-сборку.
 
 Больше ничего менять **не потребовалось**, потому что:
@@ -37,6 +37,15 @@
 - **OTA-кэш**: после успешного старта клиент забирает `GET /d1vision/hosts.json` с сервера (`{"ver":1,"brand":"D1Vision","hosts":[...]}`), кэширует в SharedPreferences и на следующем запуске добавляет к bootstrap. ⚠️ OTA-список только **ДОПОЛНЯЕТ** зашитый bootstrap, никогда не заменяет (защита от «окирпичивания»).
 - **UA-токен**: приложение добавляет в User-Agent суффикс ` d1vision_android/<версия>` (прежний ` lampa_client` остаётся). Сервер по токену сам форсит `platform/player/player_torrent/player_iptv=android` + `internal_torrclient=true` (единая точка — `lampainit-invc.js` форка lampac, обновляется по воздуху).
 - **Ребренд**: `app_name = D1Vision` (`app/src/main/res/values/strings.xml`). ⚠️ `applicationId top.rootu.lampa` **НЕ менять** — смена пакета теряет данные пользователя (SharedPreferences).
+
+## OTA-самообновление приложения (бинаря)
+
+Приложение обновляет **само себя** по воздуху с нашего сервера — без ручной переустановки.
+
+- `helpers/Updater.kt` тянет манифест на живом хосте (`HostResolver.resolve` → LAN/tv/tv2): `GET /d1vision/apps/android/manifest.json` (`{versionCode,versionName,file,notes}`), сравнивает по числовому **`versionCode`** (прежняя хрупкая tag_name/Double-логика убрана), качает APK с того же хоста, ставит через системный установщик (FileProvider — `.update_provider`). Адрес сервера Updater не трогает.
+- `versionCode` растёт из `git rev-list --count origin/main` → **OTA-коммит должен быть запушен в origin/main ДО сборки** нового билда (иначе версия не вырастет).
+- Первый OTA-переход требует один раз разрешить «Установка неизвестных приложений» для D1Vision (системный тумблер) → дальше: обнаружил → скачал → «Обновить?» → один тап. Проверено сквозным тестом на живом ТВ (555→556).
+- Билды публикует сервер из папки `client-builds/android/` (репо медиасервера); публикация — `E:\Media-server\scripts\publish-android-build.ps1`. Канон — `E:\Media-server\claude\08-clients.md` → «Самообновление бинарей».
 
 ## Кодеки = внешний плеер (важно понимать)
 Приложение **само видео НЕ декодирует**. Воспроизведение уходит во внешний плеер через `Intent(ACTION_VIEW)` ([AndroidJS.kt:432](app/src/main/java/top/rootu/lampa/AndroidJS.kt#L432) `openPlayer` → `MainActivity.runPlayer`). Fallback — HTML5-плеер внутри WebView (кодеки ограничены: обычно нет AC3/EAC3/DTS).
