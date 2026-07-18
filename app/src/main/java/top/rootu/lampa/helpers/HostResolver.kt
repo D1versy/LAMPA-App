@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl
@@ -48,6 +49,13 @@ object HostResolver {
 
     // Grace-окно приоритета — единый контракт клиентов D1Vision
     private const val RACE_GRACE_MS = 300L
+
+    // Жёсткий потолок всей гонки: проба (2.5с) + grace + запас. Страховка инварианта
+    // «каждая проба отчитывается ровно раз» — он держится на семантике колбэков OkHttp;
+    // при его нарушении (апгрейд OkHttp, правка onResponse) select ждал бы события вечно
+    // и runBlocking-обёртки завесили бы поток. Таймаут => null => мёртвый фолбек как при
+    // «все умерли».
+    private const val RACE_HARD_TIMEOUT_MS = PROBE_TIMEOUT_MS + RACE_GRACE_MS + 700L
 
     // Очередь перебора хостов при ошибке загрузки (null — перебор не начат)
     private var failoverQueue: MutableList<String>? = null
@@ -206,7 +214,9 @@ object HostResolver {
     fun resolve(context: Context): String {
         resetFailover() // новый сеанс резолва — перебор начинаем с начала списка кандидатов
         val candidates = buildCandidates(context)
-        return runBlocking { raceLive(candidates, protectedCount(context)) }
+        return runBlocking {
+            withTimeoutOrNull(RACE_HARD_TIMEOUT_MS) { raceLive(candidates, protectedCount(context)) }
+        }
             ?: candidates.firstOrNull()
             ?: normalize(context.appUrl)
     }
@@ -217,8 +227,11 @@ object HostResolver {
      * «Сервер недоступен»: пробуем переподключиться, грузим только реально живой хост.
      * Звать только с фонового потока (сеть).
      */
-    fun resolveLiveOrNull(context: Context): String? =
-        runBlocking { raceLive(buildCandidates(context), protectedCount(context)) }
+    fun resolveLiveOrNull(context: Context): String? = runBlocking {
+        withTimeoutOrNull(RACE_HARD_TIMEOUT_MS) {
+            raceLive(buildCandidates(context), protectedCount(context))
+        }
+    }
 
     /**
      * Перебор при ошибке загрузки: следующий кандидат после [failedUrl];
