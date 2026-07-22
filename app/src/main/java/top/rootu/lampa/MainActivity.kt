@@ -208,6 +208,10 @@ class MainActivity : BaseActivity(),
         private val DDD_PLAYER_PACKAGES = setOf(
             "top.rootu.dddplayer"
         )
+        private val JUSTPLUS_PLAYER_PACKAGES = setOf(
+            "com.justplus.player",
+            "com.lampaua.player"
+        )
         private val EXO_PLAYER_PACKAGES = setOf(
             "com.google.android.exoplayer2.demo", // v2, Legacy
             "androidx.media3.demo.main", // v3, current
@@ -2399,6 +2403,17 @@ class MainActivity : BaseActivity(),
                     headers = headers
                 )
             }
+            // Just+ Player
+            in JUSTPLUS_PLAYER_PACKAGES -> {
+                configureJustPlusPlayerIntent(
+                    intent,
+                    playerPackage,
+                    state = state,
+                    videoTitle,
+                    position,
+                    headers = headers
+                )
+            }
             // MX Player
             in MX_PACKAGES -> {
                 configureMxPlayerIntent(
@@ -2702,6 +2717,140 @@ class MainActivity : BaseActivity(),
                     putExtra("thumbnail", item.thumbnail ?: "")
 
                     // Subtitles for single video
+                    item.subtitles?.takeIf { it.isNotEmpty() }?.let { subs ->
+                        val subUris = subs.map { it.url.toUri() }.toTypedArray()
+                        val subNames = subs.map { it.label ?: "Sub" }.toTypedArray()
+
+                        putExtra("subs", subUris)
+                        putExtra("subs.name", subNames)
+                    }
+                }
+            }
+        }
+    }
+
+    // Number of scan lines a quality label denotes (e.g. "1080p" -> 1080, "4K"/"UHD" -> 2160),
+    // used to sort quality variants from highest to lowest before they are sent to the player.
+    private fun qualityLines(label: String?): Int {
+        if (label == null) return 0
+        val normalized = label.lowercase(Locale.getDefault())
+        if (normalized.contains("4k") || normalized.contains("uhd")) return 2160
+        return label.filter { it.isDigit() }.toIntOrNull() ?: 0
+    }
+
+    private fun configureJustPlusPlayerIntent(
+        intent: Intent,
+        playerPackage: String,
+        state: PlayerStateManager.PlaybackState,
+        videoTitle: String,
+        position: Long,
+        headers: Array<String>? = null
+    ) {
+        val card = (state.extras[LAMPA_CARD_KEY] as? String)
+            ?.let { getJson(it, LampaCard::class.java) }
+        val cardImdbId = card?.imdb_id?.takeIf { it.isNotEmpty() }
+        val cardId = card?.id?.takeIf { it.isNotEmpty() }
+
+        intent.apply {
+            setPackage(playerPackage)
+            putExtra("title", videoTitle)
+            putExtra("return_result", true)
+
+            headers?.let { putExtra("headers", it) }
+
+            when {
+                playerTimeCode == "continue" && position > 0 ->
+                    putExtra("position", position.toInt())
+                playerTimeCode == "again" ->
+                    putExtra("position", 0)
+            }
+
+            // Quality variants for the current item (JAPP quality-switching contract): parallel
+            // String[] arrays aligned by index, sorted from highest resolution to lowest. Absent
+            // when the item carries no quality map.
+            state.currentItem?.quality?.takeIf { it.isNotEmpty() }?.let { qualities ->
+                val labels = qualities.keys.sortedByDescending { qualityLines(it) }
+                putExtra("quality_levels", labels.toTypedArray())
+                putExtra("quality_urls", labels.map { qualities.getValue(it).toUri() }.toTypedArray())
+            }
+
+            if (state.playlist.size > 1) {
+                val urls = ArrayList<Uri>()
+                val titles = ArrayList<String>()
+                val filenames = ArrayList<String>()
+                val thumbnails = ArrayList<String>()
+                val segmentsList = ArrayList<String>()
+                val subtitlesList = ArrayList<Bundle>()
+
+                val seasons = ArrayList<String>()
+                val episodes = ArrayList<String>()
+                val imdbIds = ArrayList<String>()
+                val ids = ArrayList<String>()
+
+                state.playlist.forEachIndexed { index, item ->
+                    urls.add(item.url.toUri())
+                    titles.add(item.title ?: "")
+                    filenames.add(item.url.toUri().lastPathSegment ?: "")
+                    thumbnails.add(item.thumbnail ?: "")
+                    segmentsList.add(item.segments ?: "")
+                    seasons.add(item.season?.toString() ?: "")
+                    episodes.add(item.episode?.toString() ?: "")
+                    imdbIds.add(item.imdbId ?: cardImdbId ?: "")
+                    ids.add(cardId ?: "")
+
+                    // Per-episode quality variants, keyed by index (mirrors the uri_$index pattern).
+                    // Episodes without a quality map simply get no extras; the player falls back to url.
+                    item.quality?.takeIf { it.isNotEmpty() }?.let { q ->
+                        val labels = q.keys.sortedByDescending { qualityLines(it) }
+                        putExtra("video_list.quality_levels.$index", labels.toTypedArray())
+                        putExtra(
+                            "video_list.quality_urls.$index",
+                            labels.map { q.getValue(it).toUri() }.toTypedArray()
+                        )
+                    }
+
+                    val itemSubsBundle = Bundle()
+                    item.subtitles?.takeIf { it.isNotEmpty() }?.let { subs ->
+                        val subUris = subs.map { it.url.toUri() }.toTypedArray()
+                        val subNames = subs.map { it.label ?: "Sub" }.toTypedArray()
+                        itemSubsBundle.putParcelableArray("uris", subUris)
+                        itemSubsBundle.putStringArray("names", subNames)
+                    }
+                    subtitlesList.add(itemSubsBundle)
+                }
+
+                state.currentItem?.let { item ->
+                    setDataAndType(item.url.toUri(), "video/*")
+
+                    item.season?.let { putExtra("season", it) }
+                    item.episode?.let { putExtra("episode", it) }
+                    (item.imdbId ?: cardImdbId)?.let { putExtra("imdb_id", it) }
+                    cardId?.let { putExtra("id", it) }
+                }
+
+                putExtra("video_list", urls.toTypedArray())
+                putStringArrayListExtra("video_list.name", titles)
+                putStringArrayListExtra("video_list.filename", filenames)
+                putStringArrayListExtra("video_list.thumbnail", thumbnails)
+                putStringArrayListExtra("video_list.segments", segmentsList)
+                putStringArrayListExtra("video_list.season", seasons)
+                putStringArrayListExtra("video_list.episode", episodes)
+                putStringArrayListExtra("video_list.imdb_id", imdbIds)
+                putStringArrayListExtra("video_list.id", ids)
+
+                putParcelableArrayListExtra("video_list.subtitles", subtitlesList)
+
+            } else {
+                state.currentItem?.let { item ->
+                    setDataAndType(item.url.toUri(), "video/*")
+                    putExtra("filename", item.url.toUri().lastPathSegment)
+                    putExtra("thumbnail", item.thumbnail ?: "")
+                    item.segments?.let { putExtra("segments", it) }
+                    item.season?.let { putExtra("season", it) }
+                    item.episode?.let { putExtra("episode", it) }
+                    (item.imdbId ?: cardImdbId)?.let { putExtra("imdb_id", it) }
+                    cardId?.let { putExtra("id", it) }
+
                     item.subtitles?.takeIf { it.isNotEmpty() }?.let { subs ->
                         val subUris = subs.map { it.url.toUri() }.toTypedArray()
                         val subNames = subs.map { it.label ?: "Sub" }.toTypedArray()
