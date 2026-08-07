@@ -111,6 +111,25 @@ adb install -r app/build/outputs/apk/lite/debug/app-lite-debug.apk
 на диск фоном), а `exitProcess` фоновую запись не ждёт — без синхронного `commit()` терялись бы
 последние позиции просмотра (`storage` — зеркало Lampa, `last_played`) и настройки.
 
+### Вторая точка проверки OTA — MainActivity.onCreate
+
+Жёсткого выхода **мало**. Процесс на ТВ регулярно поднимается в фоне сам: `ContentJobService` —
+периодический job раз в 15 минут ([Scheduler.kt](app/src/main/java/top/rootu/lampa/sched/Scheduler.kt)
+`setPeriodic(15 мин)`, `NETWORK_TYPE_ANY`, без idle/charging) и `BootReceiver` на BOOT_COMPLETED.
+При таком **headless-старте** `App.onCreate` отрабатывает, `Updater.check()` честно находит новую
+версию — но показать окно некому: `App.checkForUpdates()` ждёт foreground не дольше ~60 с и молча
+сдаётся, **ретрая нет**. Процесс остаётся кэшированным, и когда пользователь открывает приложение,
+`App.onCreate` уже не вызывается → апдейт не приходит никогда.
+
+Поэтому в `MainActivity.onCreate` добавлен `checkUpdateOnStart()` — попадает ровно туда, где UI есть:
+- `Updater.hasUpdate()` — апдейт уже найден в этом процессе (в том числе сгоревшим фоновым стартом)
+  → показываем `UpdateActivity` **без сети**;
+- иначе `Updater.checkThrottled()` — один поход за манифестом, не чаще раза в минуту на процесс
+  (чтобы на холодном старте не дублировать запрос из `App`).
+
+`UpdateActivity` — `singleInstance`, поэтому двойной `startActivity` (из `App` и отсюда) второго окна
+не создаёт.
+
 Прежнее полное меню (обновить канал, **сменить адрес Lampa**, сменить движок, бэкап/
 восстановление) из UI убрано, но код цел — `showMenuDialog(fullMenu = true)`. Единственная
 точка входа в него теперь — интент:

@@ -122,6 +122,7 @@ import top.rootu.lampa.helpers.Prefs.urlHistory
 import top.rootu.lampa.helpers.Prefs.viewToRemove
 import top.rootu.lampa.helpers.Prefs.wathToAdd
 import top.rootu.lampa.helpers.Prefs.wathToRemove
+import top.rootu.lampa.helpers.Updater
 import top.rootu.lampa.helpers.getAppVersion
 import top.rootu.lampa.helpers.hideSystemUI
 import top.rootu.lampa.helpers.isAmazonDev
@@ -288,6 +289,43 @@ class MainActivity : BaseActivity(),
             CoroutineScope(Dispatchers.Default).launch {
                 logDebug("First run scheduleUpdate(sync: true)")
                 Scheduler.scheduleUpdate(true)
+            }
+        }
+
+        checkUpdateOnStart()
+    }
+
+    /**
+     * D1Vision: вторая (и главная для пользователя) точка проверки OTA — при создании экрана.
+     *
+     * Одной проверки в [App.onCreate] мало: она выполняется РАЗ НА ПРОЦЕСС, а процесс на ТВ
+     * регулярно поднимается в фоне — `ContentJobService` (периодический job раз в 15 минут,
+     * `Scheduler.jobScheduler`) и `BootReceiver` на BOOT_COMPLETED. При таком headless-старте
+     * проверка честно находит новую версию, но показать окно некому: [App.checkForUpdates]
+     * ждёт появления foreground не дольше ~60 с и молча сдаётся, ретрая нет. Процесс остаётся
+     * кэшированным — и когда пользователь через час открывает приложение, `App.onCreate`
+     * уже не вызывается, проверки нет, обновление не приходит НИКОГДА.
+     *
+     * Здесь мы попадаем ровно в момент, когда UI есть: если апдейт уже найден в этом процессе —
+     * показываем его без сети, иначе один поход за манифестом (троттлинг — не чаще раза в минуту,
+     * чтобы на холодном старте не дублировать запрос [App]).
+     */
+    private fun checkUpdateOnStart() {
+        if (!BuildConfig.enableUpdate) return
+        lifecycleScope.launch(Dispatchers.IO) {
+            val found = try {
+                Updater.checkThrottled()
+            } catch (e: Exception) {
+                Log.e(TAG, "checkUpdateOnStart failed", e)
+                false
+            }
+            if (!found) return@launch
+            withContext(Dispatchers.Main) {
+                if (isFinishing || isDestroyed) return@withContext
+                logDebug("checkUpdateOnStart: found ${Updater.getVersion()}, show UpdateActivity")
+                // UpdateActivity — singleInstance: если её уже показал App.checkForUpdates,
+                // повторный старт не создаст второе окно.
+                startActivity(Intent(this@MainActivity, UpdateActivity::class.java))
             }
         }
     }

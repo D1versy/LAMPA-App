@@ -3,6 +3,7 @@ package top.rootu.lampa.helpers
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import android.text.Spanned
 import androidx.core.content.FileProvider
 import androidx.core.text.HtmlCompat
@@ -46,6 +47,10 @@ object Updater {
 
     private var update: AppUpdate? = null
 
+    /** Когда в этом процессе последний раз ходили за манифестом (elapsedRealtime). */
+    @Volatile
+    private var lastCheckAt = 0L
+
     init {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             try {
@@ -57,8 +62,30 @@ object Updater {
         }
     }
 
+    /**
+     * Найдено ли обновление РАНЕЕ в этом процессе. Нужно, потому что проверка часто
+     * отрабатывает в фоновом (headless) старте процесса — его поднимает ContentJobService
+     * раз в 15 минут и BootReceiver, — где показать окно некому: [App] ждёт foreground
+     * ~60 с и молча сдаётся, а ретрая нет. Результат при этом остаётся здесь, и UI может
+     * показать его без повторного похода в сеть.
+     */
+    fun hasUpdate(): Boolean = update != null
+
+    /**
+     * Проверка с троттлингом: не чаще раза в [minIntervalMs] на процесс. Если обновление
+     * уже найдено — сразу true, в сеть не идём.
+     * Звать только с фонового потока (сеть).
+     */
+    fun checkThrottled(minIntervalMs: Long = 60_000L): Boolean {
+        if (update != null) return true
+        val now = SystemClock.elapsedRealtime()
+        if (lastCheckAt != 0L && now - lastCheckAt < minIntervalMs) return false
+        return check()
+    }
+
     /** Проверка обновления. Звать только с фонового потока (сеть). */
     fun check(): Boolean {
+        lastCheckAt = SystemClock.elapsedRealtime()
         try {
             val ctx = App.context
             val host = HostResolver.resolve(ctx)   // живой хост (LAN → tv → tv2)
