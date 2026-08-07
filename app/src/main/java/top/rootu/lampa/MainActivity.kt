@@ -17,6 +17,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Build.VERSION
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
@@ -113,6 +115,7 @@ import top.rootu.lampa.helpers.Prefs.likeToRemove
 import top.rootu.lampa.helpers.Prefs.lookToRemove
 import top.rootu.lampa.helpers.Prefs.migrate
 import top.rootu.lampa.helpers.Prefs.schdToRemove
+import top.rootu.lampa.helpers.Prefs.storagePrefs
 import top.rootu.lampa.helpers.Prefs.thrwToRemove
 import top.rootu.lampa.helpers.Prefs.tvPlayer
 import top.rootu.lampa.helpers.Prefs.urlHistory
@@ -133,6 +136,7 @@ import java.util.regex.Pattern
 import androidx.core.content.edit
 import androidx.core.view.isGone
 import androidx.core.net.toUri
+import kotlin.system.exitProcess
 
 
 class MainActivity : BaseActivity(),
@@ -1863,12 +1867,44 @@ class MainActivity : BaseActivity(),
         return URL_PATTERN.matcher(url).matches()
     }
 
+    /**
+     * D1Vision: ЖЁСТКИЙ выход — гасим и активности, и сам процесс.
+     *
+     * Одного `finishAffinity()` (как было раньше) мало: он закрывает только активности,
+     * процесс остаётся жить. А проверка OTA-обновления висит на `App.onCreate()`
+     * ([App.initializeComponents]), который выполняется РОВНО ОДИН РАЗ на процесс —
+     * поэтому «перезапуск» приложения с пульта возвращал в тот же живой процесс,
+     * апдейт не искался и предложение обновиться не появлялось. Теперь выход из меню
+     * даёт настоящий холодный старт при следующем запуске.
+     */
     fun appExit() {
         browser?.apply {
             clearCache(true)
             destroy()
         }
-        finishAffinity() // exitProcess(1)
+        flushPrefsToDisk()
+        finishAffinity()
+        // Убиваем процесс не мгновенно: даём отработать onPause/onStop — они дожидаются
+        // фоновых записей SharedPreferences (QueuedWork) в том числе тех хранилищ,
+        // которые не перечислены в flushPrefsToDisk().
+        Handler(Looper.getMainLooper()).postDelayed({ exitProcess(0) }, 300)
+    }
+
+    /**
+     * Синхронный сброс SharedPreferences на диск перед убийством процесса.
+     * Всё приложение пишет настройки через `.apply()` — в память сразу, на диск фоном.
+     * `exitProcess` фоновую запись не ждёт, поэтому без этого сброса терялись бы
+     * последние позиции просмотра (`storage` — зеркало Lampa, `last_played`) и настройки.
+     * Пустой `commit()` пишет ТЕКУЩЕЕ состояние памяти синхронно и ждёт завершения.
+     */
+    private fun flushPrefsToDisk() {
+        listOf(appPrefs, storagePrefs, lastPlayedPrefs, defPrefs).forEach { prefs ->
+            try {
+                prefs.edit().commit()
+            } catch (e: Exception) {
+                Log.e(TAG, "flushPrefsToDisk failed", e)
+            }
+        }
     }
 
     fun setPlayerPackage(packageName: String, isIPTV: Boolean) {
