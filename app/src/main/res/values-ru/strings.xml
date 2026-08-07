@@ -23,6 +23,16 @@
     <string name="change_url_press_back">Адрес сохранён — интерфейс перезагружается</string>
     <string name="error_app_not_found">Не найдено подходящих приложений</string>
     <string name="exit">Выйти из приложения</string>
+    <!-- D1Vision: встроенный libVLC-плеер -->
+    <string name="player_play">Играть</string>
+    <string name="player_pause">Пауза</string>
+    <string name="player_prev">◀◀ Пред.</string>
+    <string name="player_next">След. ▶▶</string>
+    <string name="player_audio">Аудио</string>
+    <string name="player_subs">Субтитры</string>
+    <string name="player_quality">Качество</string>
+    <string name="player_no_tracks">Дорожек нет</string>
+    <string name="player_error">Ошибка воспроизведения</string>
     <string name="input_url_title">Укажите адрес Lampa</string>
     <string name="select_player">Выбор плеера</string>
     <string name="select_player_reset">Выбранный плеер сброшен</string>

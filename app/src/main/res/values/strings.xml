@@ -25,6 +25,16 @@
     <string name="change_url_press_back">URL saved — reloading the interface</string>
     <string name="error_app_not_found">No matching applications found</string>
     <string name="exit">Quit the Application</string>
+    <!-- D1Vision: built-in libVLC player -->
+    <string name="player_play">Play</string>
+    <string name="player_pause">Pause</string>
+    <string name="player_prev">◀◀ Prev</string>
+    <string name="player_next">Next ▶▶</string>
+    <string name="player_audio">Audio</string>
+    <string name="player_subs">Subtitles</string>
+    <string name="player_quality">Quality</string>
+    <string name="player_no_tracks">No tracks available</string>
+    <string name="player_error">Playback error</string>
     <string name="input_url_title">Please enter Lampa URL</string>
     <string name="select_player">Player selection</string>
     <string name="select_player_reset">The selected player has been reset</string>

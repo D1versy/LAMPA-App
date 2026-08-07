@@ -37,7 +37,8 @@ android {
     compileSdk 34
     defaultConfig {
         applicationId "top.rootu.lampa"
-        minSdkVersion 16
+        // D1Vision: 16 → 21 из-за встроенного libVLC (требует ≥17); парк владельца — Android TV ≥5
+        minSdkVersion 21
         //noinspection ExpiredTargetSdkVersion
         targetSdkVersion 28
         versionCode getVersionCode()
@@ -45,6 +46,12 @@ android {
         multiDexEnabled = true // required when setting minSdkVersion to 20 or lower
         // Use SupportLibrary for vectors
         vectorDrawables.useSupportLibrary = true
+
+        // D1Vision: нативные .so libVLC — только реальные ТВ/мобилы (x86-эмулятор не нужен,
+        // каждый ABI ≈ +15-25 МБ в APK)
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
 
         // D1Vision: ключ периметра — из local.properties (gitignored), НЕ коммитить.
         // Строка вида: D1V_KEY_ANDROID=<hex64>. Должен совпадать с d1v.keys.android в init.conf.
@@ -216,6 +223,8 @@ dependencies {
     implementation 'org.conscrypt:conscrypt-android:2.5.3' // for TLS v1.3 on API < 29
     //noinspection GradleDependency 1.8.1 fails on build with old gradle
     implementation 'org.mozilla:rhino:1.7.15' // JavaScript to run PAC file to get correct proxies
+    // D1Vision: встроенный плеер (паритет с VLCKit на mac/iOS) — см. player/PlayerActivity.kt
+    implementation 'org.videolan.android:libvlc-all:3.6.5'
     // crosswalk latest
     liteApi fileTree(dir: 'libs', include: ['xwalk_shared_library-23.53.589.4.aar'])
     ruStoreApi fileTree(dir: 'libs', include: ['xwalk_shared_library-23.53.589.4.aar'])

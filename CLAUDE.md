@@ -47,14 +47,17 @@
 - Первый OTA-переход требует один раз разрешить «Установка неизвестных приложений» для D1Vision (системный тумблер) → дальше: обнаружил → скачал → «Обновить?» → один тап. Проверено сквозным тестом на живом ТВ (555→556).
 - Билды публикует сервер из папки `client-builds/android/` (репо медиасервера); публикация — `E:\Media-server\scripts\publish-android-build.ps1`. Канон — `E:\Media-server\claude\08-clients.md` → «Самообновление бинарей».
 
-## Кодеки = внешний плеер (важно понимать)
-Приложение **само видео НЕ декодирует**. Воспроизведение уходит во внешний плеер через `Intent(ACTION_VIEW)` ([AndroidJS.kt:432](app/src/main/java/top/rootu/lampa/AndroidJS.kt#L432) `openPlayer` → `MainActivity.runPlayer`). Fallback — HTML5-плеер внутри WebView (кодеки ограничены: обычно нет AC3/EAC3/DTS).
+## Встроенный плеер libVLC (с versionCode 568; внешние плееры больше не используются)
 
-**Чтобы были «все кодеки» (AC3/EAC3/DTS/TrueHD/HEVC/HDR) — поставить на ТВ внешний плеер и выбрать его в приложении:**
-- **ViMu Player** (`net.gtvbox.vimuhd`) — рекомендованный для Android TV (passthrough звука, HEVC/HDR). Приложение уже умеет его находить.
-- Альтернативы: **MX Player Pro**, **VLC**, **just-player** (media3/ExoPlayer).
+Видео играет **встроенный** плеер [player/PlayerActivity.kt](app/src/main/java/top/rootu/lampa/player/PlayerActivity.kt) на `org.videolan.android:libvlc-all` — паритет с mac/iOS, где VLCKit встроен в приложение (эталон — `mac-app/LampaKit/PlayerCoordinator.swift`). Все кодеки (AC3/EAC3/DTS/HEVC) декодирует libVLC, отдельные плееры ставить не нужно.
 
-Выбор плеера — в самом Lampa-интерфейсе (при первом запуске плеера предложит список) или Настройки Lampa → плеер. Оффлайн-файлы из «Загрузок» (`/qdl/stream`) играют по тому же пути → тоже через внешний плеер.
+Схема: `AndroidJS.openPlayer` → `MainActivity.runPlayer` (парсит JSON, сохраняет state в `PlayerStateManager`) → **ранний выход** во внутренний `PlayerActivity` (state-JSON неподписанный — активность сама подписывает URL через `D1VAuth` и возвращает оригинальный url) → результат в тот же `resultLauncher` → generic-ветка `handleGenericPlayerResult` → `resultPlayer` → `Lampa.Timeline.update` + пометка предыдущих серий + WatchNext.
+
+Фичи: резюме позиции (seek строго ПОСЛЕ первого `Event.Playing` — libVLC до старта молча игнорирует seek), auto-next по плейлисту, аудио/суб-дорожки, внешние субтитры (`addSlave` после старта), меню качества с сохранением позиции, D-pad: ←/→ перемотка ±10с (удержание 30с/60с), OK — пауза+OSD, BACK — OSD/выход. `EndReached`/`Error` обрабатываются через `Handler.post` — вызов `stop()`/`setMedia()` из колбэка события = дедлок libVLC.
+
+- ⚠️ `minSdkVersion` поднят 16 → **21** (libVLC требует ≥17), `ndk.abiFilters arm64-v8a + armeabi-v7a` → APK ≈ **55 МБ** (было 14.4).
+- **Код внешних плееров в MainActivity НЕ удалён** (configurePlayerIntent, showPlayerSelectionDialog, handle*PlayerResult) — мёртвый код после раннего выхода в `runPlayer`; откат = убрать один блок.
+- Прогресс просмотра уезжает и на сервер (qdl 2.18, Modules/Sync/TimeCode) — см. `E:\Media-server\claude\08-clients.md`.
 
 ## Сборка
 Поднят **self-contained тулчейн прямо в репо** — папка `.toolchain/` (в `.gitignore`, в гит не уедет), система не трогается:

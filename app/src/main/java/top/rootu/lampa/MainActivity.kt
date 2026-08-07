@@ -2368,9 +2368,22 @@ class MainActivity : BaseActivity(),
                 )
             }
             state?.let {
+                // D1Vision: играет ТОЛЬКО встроенный плеер (libVLC, паритет с VLCKit на mac/iOS).
+                // State передаём НЕподписанным — PlayerActivity подписывает URL сама (D1VAuth)
+                // и возвращает оригинальный url, так что матчинг resultPlayer не ломается.
+                // Результат приходит в тот же resultLauncher → generic-ветка handlePlayerResult.
+                // Код внешних плееров ниже оставлен мёртвым — мгновенный откат одной веткой.
+                val internal = Intent(this, top.rootu.lampa.player.PlayerActivity::class.java)
+                    .putExtra(top.rootu.lampa.player.PlayerActivity.EXTRA_STATE, playerStateManager.getStateJson(it).toString())
+                    .putExtra(top.rootu.lampa.player.PlayerActivity.EXTRA_IPTV, isIPTV || isLIVE)
+                    .putExtra(top.rootu.lampa.player.PlayerActivity.EXTRA_TITLE, videoTitle)
+                resultLauncher.launch(internal)
+                return
+
                 // Периметр: внешний плеер не несёт cookie WebView — ключ нужен в самом URL.
                 // Подписываем ОТДЕЛЬНУЮ копию state для плеера (наши хосты), оригинал в кэше
                 // остаётся чистым — иначе сломается матчинг при resume (Lampa шлёт URL без ключа).
+                @Suppress("UNREACHABLE_CODE")
                 val playbackState = signStateForPlayback(it)
                 createBaseIntent(playbackState)?.let {
                     // Get available players
