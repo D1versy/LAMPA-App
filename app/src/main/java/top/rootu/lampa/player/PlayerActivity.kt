@@ -91,6 +91,7 @@ class PlayerActivity : BaseActivity() {
     private var slavesAdded = false
     private var lastPosMs = 0L
     private var lastDurMs = 0L
+    private var osdInteractive = false   // панель с фокусом на кнопках (не индикатор перемотки)
     private var qualityLabel: String? = null   // выбранное качество — переживает auto-next
 
     // акселерация перемотки: подряд идущие нажатия наращивают шаг 10с → 30с → 60с
@@ -297,14 +298,24 @@ class PlayerActivity : BaseActivity() {
 
     private fun osdVisible() = osdPanel.visibility == View.VISIBLE
 
+    /**
+     * Панель в ИНТЕРАКТИВНОМ режиме: фокус на кнопках, стрелки ходят по ним.
+     * Отличать от showOsdProgressOnly() (панель как индикатор при перемотке) —
+     * решает dispatchKeyEvent: НЕЛЬЗЯ судить по видимости панели. Баг билда 568:
+     * гейт стоял на osdVisible() → первая же перемотка показывала панель, и все
+     * следующие нажатия стрелок вместо seek лишь продлевали её показ.
+     */
     private fun showOsd() {
+        osdInteractive = true
         osdPanel.visibility = View.VISIBLE
+        updateProgressUi()
         btnPlayPause.requestFocus()
         bumpOsd()
     }
 
     private fun hideOsd() {
         handler.removeCallbacks(hideOsdRunnable)
+        osdInteractive = false
         osdPanel.visibility = View.GONE
     }
 
@@ -349,13 +360,18 @@ class PlayerActivity : BaseActivity() {
             else -> SEEK_BASE_MS
         }
         val dur = lastDurMs
-        val target = (player.time + deltaSign * step).coerceAtLeast(0)
-        player.time = if (dur > 0) target.coerceAtMost(dur - 1000) else target
-        if (player.time > 0) lastPosMs = player.time
+        // считаем от lastPosMs, не от player.time: seek в libVLC асинхронный, чтение
+        // player.time сразу после записи возвращает СТАРОЕ значение — серия нажатий
+        // мотала бы от одной и той же точки
+        val base = if (lastPosMs > 0) lastPosMs else player.time
+        var target = (base + deltaSign * step).coerceAtLeast(0)
+        if (dur > 0) target = target.coerceAtMost(dur - 1000)
+        player.time = target
+        lastPosMs = target   // мгновенный отклик прогресс-бара
         showOsdProgressOnly()
     }
 
-    /** при перемотке показываем панель, но фокус не воруем (стрелки продолжают мотать) */
+    /** при перемотке панель — только индикатор: НЕ интерактивная, фокус не воруем */
     private fun showOsdProgressOnly() {
         osdPanel.visibility = View.VISIBLE
         updateProgressUi()
@@ -363,27 +379,51 @@ class PlayerActivity : BaseActivity() {
         handler.postDelayed(hideOsdRunnable, OSD_HIDE_MS)
     }
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        when (keyCode) {
-            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE,
-            KeyEvent.KEYCODE_SPACE -> { togglePause(); return true }
+    /**
+     * Весь пульт — через dispatchKeyEvent, ДО фокус-навигации вью-иерархии.
+     * Activity.onKeyDown не годится: (1) кликабельный корень (touch-тап по экрану)
+     * съедал DPAD_CENTER — «OK» не ставил паузу; (2) гейт по видимости панели
+     * убивал перемотку (см. showOsd). Правило: не интерактивная панель → стрелки
+     * мотают; интерактивная → стрелки ходят по кнопкам (super), BACK закрывает.
+     * ACTION_UP обработанных клавиш глотаем: незаглоченный BACK-UP дошёл бы до
+     * onBackPressed и закрыл плеер без результата.
+     */
+    private val swallowUp = mutableSetOf<Int>()
 
-            KeyEvent.KEYCODE_MEDIA_NEXT -> { if (!isIPTV && index + 1 < items.size) playItem(index + 1); return true }
-            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> { if (!isIPTV && index > 0) playItem(index - 1); return true }
-            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { seekBy(+1); return true }
-            KeyEvent.KEYCODE_MEDIA_REWIND -> { seekBy(-1); return true }
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_UP && swallowUp.remove(event.keyCode)) return true
+        if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
+        val key = event.keyCode
+
+        // глобальные медиа-клавиши — в любом режиме
+        when (key) {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE,
+            KeyEvent.KEYCODE_SPACE -> { togglePause(); swallowUp.add(key); return true }
+
+            KeyEvent.KEYCODE_MEDIA_NEXT -> { if (!isIPTV && index + 1 < items.size) playItem(index + 1); swallowUp.add(key); return true }
+            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> { if (!isIPTV && index > 0) playItem(index - 1); swallowUp.add(key); return true }
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { seekBy(+1); swallowUp.add(key); return true }
+            KeyEvent.KEYCODE_MEDIA_REWIND -> { seekBy(-1); swallowUp.add(key); return true }
         }
-        if (!osdVisible()) {
-            when (keyCode) {
-                KeyEvent.KEYCODE_DPAD_LEFT -> { seekBy(-1); return true }
-                KeyEvent.KEYCODE_DPAD_RIGHT -> { seekBy(+1); return true }
-                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { togglePause(); showOsd(); return true }
-                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> { showOsd(); return true }
-                KeyEvent.KEYCODE_BACK -> { finishWithResult(false); return true }
+
+        if (!osdInteractive) {
+            when (key) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> { seekBy(-1); swallowUp.add(key); return true }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> { seekBy(+1); swallowUp.add(key); return true }
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { togglePause(); showOsd(); swallowUp.add(key); return true }
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> { showOsd(); swallowUp.add(key); return true }
+                KeyEvent.KEYCODE_BACK -> {
+                    swallowUp.add(key)
+                    if (osdVisible()) hideOsd() else finishWithResult(false)   // индикатор перемотки закрываем, не выходим
+                    return true
+                }
             }
-        } else if (keyCode == KeyEvent.KEYCODE_BACK) { hideOsd(); return true }
-        else bumpOsd()   // навигация по кнопкам OSD продлевает показ
-        return super.onKeyDown(keyCode, event)
+        } else {
+            if (key == KeyEvent.KEYCODE_BACK) { hideOsd(); swallowUp.add(key); return true }
+            // стрелки/OK ходят по кнопкам панели (фокус-навигация); показ продлеваем
+            bumpOsd()
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     // ─────────────────────────── дорожки и качество ───────────────────────────
