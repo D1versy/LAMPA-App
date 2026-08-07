@@ -1123,7 +1123,9 @@ class MainActivity : BaseActivity(),
         // Handle search command
         intent.getStringExtra("cmd")?.let { cmd ->
             when (cmd) {
-                "open_settings" -> showMenuDialog()
+                // D1Vision: единственная точка, где ещё доступно ПОЛНОЕ меню (смена адреса
+                // сервера, движок, бэкап) — из UI оно убрано, см. showMenuDialog().
+                "open_settings" -> showMenuDialog(fullMenu = true)
             }
         }
         // Handle an external search query (e.g. from a voice assistant or a
@@ -1327,10 +1329,24 @@ class MainActivity : BaseActivity(),
         // browser?.clearHistory()
     }
 
-    private fun showMenuDialog() {
+    /**
+     * D1Vision: по умолчанию меню — ОДИН пункт «Выйти из приложения» (пульт ТВ: долгое
+     * удержание «Назад», кнопка MENU, экранная FAB). Раньше единственный способ выйти —
+     * досхлопнуть весь стек экранов Lampa обычным «назад» до корня, что на длинном сеансе
+     * означало десятки нажатий.
+     *
+     * [fullMenu] = true возвращает прежнее полное меню (смена адреса сервера, движок,
+     * бэкап). Из UI оно намеренно убрано; остаётся сервисной лазейкой через интент
+     * `adb shell am start -n top.rootu.lampa/.MainActivity --es cmd open_settings` —
+     * без неё перенацелить приложение при смерти всех хостов можно было бы только
+     * очисткой данных.
+     */
+    private fun showMenuDialog(fullMenu: Boolean = false) {
         // Define menu items
-        val menuItems = mutableListOf(
-            MenuItem(
+        val menuItems = mutableListOf<MenuItem>()
+
+        if (fullMenu) {
+            menuItems += MenuItem(
                 title = if (isTvContentProviderAvailable) {
                     getString(R.string.update_chan_title)
                 } else if (isAndroidTV) {
@@ -1340,32 +1356,33 @@ class MainActivity : BaseActivity(),
                 },
                 action = "updateOrClose",
                 icon = if (isAndroidTV) R.drawable.round_refresh_24 else R.drawable.round_close_24
-            ),
-            MenuItem(
+            )
+            menuItems += MenuItem(
                 title = getString(R.string.change_url_title),
                 action = "showUrlInputDialog",
                 icon = R.drawable.round_link_24
-            ),
-            MenuItem(
+            )
+            menuItems += MenuItem(
                 title = getString(R.string.change_engine),
                 action = "showBrowserInputDialog",
                 icon = R.drawable.round_explorer_24
-            ),
-            MenuItem(
+            )
+            menuItems += MenuItem(
                 title = getString(R.string.backup_restore_title),
                 action = "showBackupDialog",
                 icon = R.drawable.round_settings_backup_restore_24
-            ),
-            MenuItem(
-                title = getString(R.string.exit),
-                action = "appExit",
-                icon = R.drawable.round_exit_to_app_24
             )
-        )
+            // Hide CrossWalk switcher on RuStore builds
+            // (индекс 2 = change_engine; «Выйти» добавляется ниже, порядок не ломается)
+            if (!isInstallPermissionDeclared(this))
+                menuItems.removeAt(2)
+        }
 
-        // Hide CrossWalk switcher on RuStore builds
-        if (!isInstallPermissionDeclared(this))
-            menuItems.removeAt(2)
+        menuItems += MenuItem(
+            title = getString(R.string.exit),
+            action = "appExit",
+            icon = R.drawable.round_exit_to_app_24
+        )
 
         // Set up the adapter
         val adapter = ImgArrayAdapter(
@@ -1376,7 +1393,7 @@ class MainActivity : BaseActivity(),
 
         // Configure the dialog
         val dialog = AlertDialog.Builder(this).apply {
-            setTitle(getString(R.string.menu_title))
+            setTitle(getString(if (fullMenu) R.string.menu_title else R.string.exit_menu_title))
             setAdapter(adapter) { dialog, which ->
                 dialog.dismiss()
                 when (menuItems[which].action) {

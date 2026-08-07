@@ -1,6 +1,7 @@
 package top.rootu.lampa.helpers
 
 import android.content.Context
+import android.util.Log
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
@@ -44,6 +45,7 @@ import kotlin.coroutines.resume
  * только после провала его пробы. Проигравшие пробы отменяются.
  */
 object HostResolver {
+    private const val TAG = "HostResolver"
     private const val OTA_HOSTS_KEY = "d1vision_hosts"
     private const val PROBE_TIMEOUT_MS = 2500
 
@@ -214,11 +216,18 @@ object HostResolver {
     fun resolve(context: Context): String {
         resetFailover() // новый сеанс резолва — перебор начинаем с начала списка кандидатов
         val candidates = buildCandidates(context)
-        return runBlocking {
+        val winner = runBlocking {
             withTimeoutOrNull(RACE_HARD_TIMEOUT_MS) { raceLive(candidates, protectedCount(context)) }
         }
-            ?: candidates.firstOrNull()
-            ?: normalize(context.appUrl)
+        val result = winner ?: candidates.firstOrNull() ?: normalize(context.appUrl)
+        // Диагностика фолбека: по итоговому LAMPA_URL не видно, кто участвовал и кто отвалился.
+        // Смотреть `adb logcat -s HostResolver` — дома ожидаем победу LAN, вне дома tv.d1versy.com.
+        Log.d(
+            TAG,
+            "resolve: winner=${winner ?: "<никто не ответил>"} used=$result " +
+                    "protected=${protectedCount(context)} candidates=$candidates"
+        )
+        return result
     }
 
     /**

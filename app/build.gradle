@@ -109,8 +109,12 @@ android {
     def defaultServerUrl = "http://192.168.87.24:9118"
 
     // Bootstrap-хосты D1Vision в порядке приоритета (comma-separated, БЕЗ пробелов).
-    // Первый = defaultServerUrl (LAN); tv/tv2.d1versy.com пока не существуют в DNS —
-    // задел на будущее, мгновенный NXDOMAIN при пробе не мешает. Перебор — helpers/HostResolver.kt.
+    // Тот же список и тот же порядок, что у Apple-клиентов (LampaKit/Core/AppSettings.swift).
+    // Первый = defaultServerUrl (LAN, primary); tv.d1versy.com — рабочий внешний вход
+    // (Caddy + периметр по ключу платформы); у tv2 A-запись пока на чужом IP — проба
+    // просто отваливается по таймауту. Перебор и гонка — helpers/HostResolver.kt.
+    // ⚠️ Изнутри дома tv.d1versy.com НЕ отвечает (нет hairpin NAT на роутере) — поэтому
+    // LAN остаётся первым: домен-primary означал бы 2.5 с ожидания на каждом старте дома.
     def fallbackHosts = "http://192.168.87.24:9118,https://tv.d1versy.com:9443,https://tv2.d1versy.com:9443"
 
     productFlavors {

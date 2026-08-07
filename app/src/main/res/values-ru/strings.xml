@@ -17,9 +17,12 @@
     <string name="engine_webkit">Android System WebView</string>
     <string name="engine_active">используется</string>
     <string name="menu_title">Выберите действие</string>
-    <string name="change_url_press_back">Для смены адреса нажмите и удерживайте кнопку «Назад»\nили нажмите кнопку «Меню»</string>
+    <!-- D1Vision: заголовок меню из одного пункта (долгое «Назад» / MENU / FAB) -->
+    <string name="exit_menu_title">Выход</string>
+    <!-- D1Vision: полное меню убрано из UI, старая подсказка про удержание «Назад» больше не верна -->
+    <string name="change_url_press_back">Адрес сохранён — интерфейс перезагружается</string>
     <string name="error_app_not_found">Не найдено подходящих приложений</string>
-    <string name="exit">Завершить работу</string>
+    <string name="exit">Выйти из приложения</string>
     <string name="input_url_title">Укажите адрес Lampa</string>
     <string name="select_player">Выбор плеера</string>
     <string name="select_player_reset">Выбранный плеер сброшен</string>

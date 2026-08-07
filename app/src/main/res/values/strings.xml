@@ -19,7 +19,10 @@
     <string name="engine_webkit">Android System WebView</string>
     <string name="engine_active">current</string>
     <string name="menu_title">Options Menu</string>
-    <string name="change_url_press_back">To change the address, press and hold the "Back" button\nor press the "Menu" button</string>
+    <!-- D1Vision: заголовок меню из одного пункта (долгое «Назад» / MENU / FAB) -->
+    <string name="exit_menu_title">Exit</string>
+    <!-- D1Vision: полное меню убрано из UI, старая подсказка про удержание «Назад» больше не верна -->
+    <string name="change_url_press_back">URL saved — reloading the interface</string>
     <string name="error_app_not_found">No matching applications found</string>
     <string name="exit">Quit the Application</string>
     <string name="input_url_title">Please enter Lampa URL</string>
