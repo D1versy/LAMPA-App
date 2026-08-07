@@ -3,7 +3,6 @@ package top.rootu.lampa.channels
 import android.annotation.SuppressLint
 import android.net.Uri
 import android.util.Log
-import androidx.core.net.toUri
 import androidx.tvprovider.media.tv.TvContractCompat
 import androidx.tvprovider.media.tv.TvContractCompat.PreviewProgramColumns.ASPECT_RATIO_16_9
 import androidx.tvprovider.media.tv.TvContractCompat.PreviewProgramColumns.ASPECT_RATIO_2_3
@@ -16,6 +15,7 @@ import kotlinx.coroutines.withContext
 import top.rootu.lampa.App
 import top.rootu.lampa.PlayerStateManager
 import top.rootu.lampa.content.LampaProvider
+import top.rootu.lampa.helpers.D1VAuth
 import top.rootu.lampa.helpers.Helpers
 import top.rootu.lampa.helpers.Helpers.debugLog
 import top.rootu.lampa.helpers.Helpers.getDefaultPosterUri
@@ -326,13 +326,15 @@ object WatchNext {
             }
         }
 
-        val posterUri = card.img?.toUri() ?: getDefaultPosterUri()
+        // Картинки качает системный лаунчер (чужой процесс) — подписываем ключом периметра
+        val posterUri = D1VAuth.signUri(card.img) ?: getDefaultPosterUri()
         builder.setPosterArtUri(posterUri)
             .setPosterArtAspectRatio(ASPECT_RATIO_2_3)
 
         if (!card.background_image.isNullOrEmpty()) {
-            builder.setThumbnailUri(card.background_image!!.toUri())
-                .setThumbnailAspectRatio(ASPECT_RATIO_16_9)
+            D1VAuth.signUri(card.background_image)?.let {
+                builder.setThumbnailUri(it).setThumbnailAspectRatio(ASPECT_RATIO_16_9)
+            }
         }
 
         return builder.build()

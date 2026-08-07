@@ -17,6 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.rootu.lampa.helpers.Helpers.isConnected
 import top.rootu.lampa.helpers.Prefs.appLang
+import top.rootu.lampa.helpers.Prefs.appUrl
 import top.rootu.lampa.helpers.Updater
 import top.rootu.lampa.helpers.handleUncaughtException
 import top.rootu.lampa.helpers.setLanguage
@@ -33,6 +34,10 @@ class App : MultiDexApplication() {
 
     companion object {
         private val TAG: String = App::class.java.simpleName
+
+        // Сколько секунд ждём появления foreground, отличая пользовательский старт от фонового
+        private const val FOREGROUND_WAIT_SEC = 60
+
         private lateinit var appContext: Context
 
         @Volatile
@@ -118,9 +123,36 @@ class App : MultiDexApplication() {
 
         // Init TMDB genres
         applicationScope.launch {
-            TMDB.initGenres()
+            initGenresWhenVisible()
         }
 
+    }
+
+    /**
+     * D1Vision: справочник жанров тянем ТОЛЬКО когда приложение реально открыл пользователь.
+     *
+     * `onCreate` выполняется при ЛЮБОМ старте процесса, включая headless-подъём
+     * (`ContentJobService` раз в 15 минут и `BootReceiver`) — раньше это давало сетевой
+     * запрос каждые четверть часа, при том что каналы лаунчера собираются из кэша в prefs
+     * и жанры им нужны лишь как подпись. Ждём foreground не дольше [FOREGROUND_WAIT_SEC];
+     * не дождались — фоновой старт, в сеть не идём вовсе.
+     */
+    private suspend fun initGenresWhenVisible() {
+        try {
+            if (appContext.appUrl.isEmpty()) return // сервер не задан — некуда идти
+            var count = FOREGROUND_WAIT_SEC
+            while (!inForeground && count > 0) {
+                delay(1000)
+                count--
+            }
+            if (!inForeground) {
+                if (BuildConfig.DEBUG) Log.d(TAG, "headless start, skip TMDB genres")
+                return
+            }
+            TMDB.initGenres()
+        } catch (e: Exception) {
+            Log.e(TAG, "Genres init failed", e)
+        }
     }
 
     private suspend fun checkForUpdates() {

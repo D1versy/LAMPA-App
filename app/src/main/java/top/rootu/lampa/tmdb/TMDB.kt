@@ -1,17 +1,18 @@
 package top.rootu.lampa.tmdb
 
 import android.net.Uri
-import android.os.Build
 import androidx.core.net.toUri
 import okhttp3.Dns
-import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.dnsoverhttps.DnsOverHttps
 import top.rootu.lampa.App
+import top.rootu.lampa.BuildConfig
+import top.rootu.lampa.MainActivity
+import top.rootu.lampa.helpers.D1VAuth
 import top.rootu.lampa.helpers.Helpers.debugLog
 import top.rootu.lampa.helpers.Helpers.getJson
 import top.rootu.lampa.helpers.Prefs.appLang
+import top.rootu.lampa.helpers.Prefs.appUrl
 import top.rootu.lampa.helpers.Prefs.tmdbApiUrl
 import top.rootu.lampa.helpers.Prefs.tmdbImgUrl
 import top.rootu.lampa.helpers.capitalizeFirstLetter
@@ -20,15 +21,63 @@ import top.rootu.lampa.tmdb.models.entity.Entities
 import top.rootu.lampa.tmdb.models.entity.Entity
 import top.rootu.lampa.tmdb.models.entity.Genre
 import java.io.IOException
-import java.net.Inet6Address
-import java.net.InetAddress
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 
 object TMDB {
-    const val APIURL = "https://api.themoviedb.org/3/"
-    const val IMGURL = "https://image.tmdb.org/"
-    const val APIKEY = "4ef0d7355d9ffb5151e987764708ce96"
+    /**
+     * D1Vision: за TMDB ходим ТОЛЬКО через прокси своего сервера (`<host>/tmdb/api`,
+     * `<host>/tmdb/img`) — наружу ходит сервер, он же кеширует и подставляет свой ключ
+     * (поэтому `api_key` из клиента убран).
+     *
+     * Это ДЕФОЛТЫ для prefs: реальные адреса оболочка зеркалит из веб-страницы
+     * (`AndroidJS.storageChange` → `baseUrlApiTMDB`/`baseUrlImageTMDB`). Раньше дефолты
+     * вели на api.themoviedb.org, и свежая установка / headless-старт стучались наружу.
+     */
+    val APIURL: String get() = "${serverBase()}/tmdb/api/3/"
+    val IMGURL: String get() = "${serverBase()}/tmdb/img/"
+
+    /**
+     * База TMDB-прокси: активный хост оболочки (победитель гонки [top.rootu.lampa.helpers.HostResolver]),
+     * иначе сохранённый/зашитый адрес сервера, иначе первый bootstrap-хост из
+     * `BuildConfig.fallbackHosts` (свежая установка, хост ещё не выбран).
+     */
+    private fun serverBase(): String {
+        val active = MainActivity.LAMPA_URL.trim().trimEnd('/')
+        if (active.isNotEmpty()) return active
+        val saved = App.context.appUrl.trim().trimEnd('/')
+        if (saved.isNotEmpty()) return saved
+        return BuildConfig.fallbackHosts.split(",")
+            .map { it.trim().trimEnd('/') }
+            .firstOrNull { it.isNotEmpty() } ?: ""
+    }
+
+    // Таймаут запросов к своему серверу (был зашит в клиенте Quad9)
+    private const val REQUEST_TIMEOUT_MS = 15000
+
+    /**
+     * Клиент для запросов к своему серверу (TMDB-прокси + постеры через Glide).
+     *
+     * DoH-резолвер Quad9 убран: он видел даже обращения к нашему домену, а в LAN DNS не
+     * нужен вовсе — берём системный резолвер. Ключ периметра дописывается интерцептором:
+     * вне дома прокси закрыт им же, а UA-токен нужен серверу для форса платформы.
+     */
+    val okHttp: OkHttpClient by lazy {
+        HttpHelper.getOkHttpClient(REQUEST_TIMEOUT_MS).newBuilder()
+            .dns(Dns.SYSTEM)
+            .addInterceptor { chain ->
+                val request = chain.request()
+                val url = request.url().toString()
+                val signed = D1VAuth.sign(url) ?: url
+                chain.proceed(
+                    request.newBuilder()
+                        .header("User-Agent", HttpHelper.userAgent)
+                        .apply { if (signed != url) url(signed) }
+                        .build()
+                )
+            }
+            .build()
+    }
+
     private var movieGenres: List<Genre?> = emptyList()
     private var tvGenres: List<Genre?> = emptyList()
     private val _genres by lazy {
@@ -104,37 +153,6 @@ object TMDB {
 
     val genres: Map<Int, String> get() = _genres
 
-    // Quad9 over HTTPS resolver
-    fun startWithQuad9DNS(): OkHttpClient {
-
-        val bootstrapClient = OkHttpClient.Builder().build()
-        val okUrl = HttpUrl.parse("https://dns.quad9.net/dns-query")
-
-        var dns: Dns? = okUrl?.let {
-            DnsOverHttps.Builder().client(bootstrapClient)
-                .url(it)
-                .bootstrapDnsHosts(
-                    InetAddress.getByName("9.9.9.9"),
-                    InetAddress.getByName("149.112.112.112"),
-                    Inet6Address.getByName("2620:fe::fe")
-                )
-                .build()
-        }
-        if (dns == null)
-            dns = Dns.SYSTEM
-
-        return bootstrapClient.newBuilder()
-            .connectTimeout(15000L, TimeUnit.MILLISECONDS)
-            .dns(dns!!)
-            .build()
-    }
-
-    // For KitKat
-    fun permissiveOkHttp(): OkHttpClient {
-        val timeout = 15000
-        return HttpHelper.getOkHttpClient(timeout)
-    }
-
     fun videos(endpoint: String, params: MutableMap<String, String>): Entities? {
         val apiUrl = App.context.tmdbApiUrl
         val apiUri = apiUrl.toUri()
@@ -145,19 +163,17 @@ object TMDB {
             .scheme(apiUri.scheme)
             .encodedAuthority(authority)  // Use encodedAuthority instead of authority to prevent double encoding
             .path("$basePath/$endpoint")
-        // key must be 1st
-        params["api_key"] = APIKEY
+        // api_key не шлём: ключ подставляет наш сервер (см. шапку файла)
         params["language"] = getLang()
         for (param in params) {
             urlBuilder.appendQueryParameter(param.key, param.value)
         }
-        if (apiUrl != APIURL)
         // Add all original query parameters
-            apiUri.queryParameterNames.forEach { paramName ->
-                apiUri.getQueryParameter(paramName)?.let { paramValue ->
-                    urlBuilder.appendQueryParameter(paramName, paramValue)
-                }
+        apiUri.queryParameterNames.forEach { paramName ->
+            apiUri.getQueryParameter(paramName)?.let { paramValue ->
+                urlBuilder.appendQueryParameter(paramName, paramValue)
             }
+        }
 
         var body: String? = null
         val link = urlBuilder.build().toString()
@@ -166,9 +182,7 @@ object TMDB {
             val request = Request.Builder()
                 .url(link)
                 .build()
-            val client = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
-                startWithQuad9DNS() else permissiveOkHttp()
-            client.newCall(request).execute().use { response ->
+            okHttp.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) throw IOException("Unexpected code $response")
                 body = response.body()?.string()
                 response.body()?.close()
@@ -213,9 +227,8 @@ object TMDB {
             .scheme(apiUri.scheme)
             .encodedAuthority(authority)  // Use encodedAuthority instead of authority to prevent double encoding
             .path("$basePath/$endpoint")
-        // key must be 1st
+        // api_key не шлём: ключ подставляет наш сервер (см. шапку файла)
         val params = mutableMapOf<String, String>()
-        params["api_key"] = APIKEY
         if (lang.isBlank())
             params["language"] = getLang()
         else params["language"] = lang
@@ -224,13 +237,12 @@ object TMDB {
         for (param in params) {
             urlBuilder.appendQueryParameter(param.key, param.value)
         }
-        if (apiUrl != APIURL)
         // Add all original query parameters
-            apiUri.queryParameterNames.forEach { paramName ->
-                apiUri.getQueryParameter(paramName)?.let { paramValue ->
-                    urlBuilder.appendQueryParameter(paramName, paramValue)
-                }
+        apiUri.queryParameterNames.forEach { paramName ->
+            apiUri.getQueryParameter(paramName)?.let { paramValue ->
+                urlBuilder.appendQueryParameter(paramName, paramValue)
             }
+        }
 
         var body: String? = null
         val link = urlBuilder.build().toString()
@@ -239,9 +251,7 @@ object TMDB {
             val request = Request.Builder()
                 .url(link)
                 .build()
-            val client = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
-                startWithQuad9DNS() else permissiveOkHttp()
-            client.newCall(request).execute().use { response ->
+            okHttp.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) throw IOException("Unexpected code $response")
                 body = response.body()?.string()
                 response.body()?.close()
@@ -326,13 +336,12 @@ object TMDB {
             .scheme(imgUri.scheme)
             .encodedAuthority(authority)  // Use encodedAuthority instead of authority to prevent double encoding
             .path("$basePath/t/p/original$path")
-        if (imgUrl != IMGURL)
         // Add all original query parameters
-            imgUri.queryParameterNames.forEach { paramName ->
-                imgUri.getQueryParameter(paramName)?.let { paramValue ->
-                    builder.appendQueryParameter(paramName, paramValue)
-                }
+        imgUri.queryParameterNames.forEach { paramName ->
+            imgUri.getQueryParameter(paramName)?.let { paramValue ->
+                builder.appendQueryParameter(paramName, paramValue)
             }
+        }
         // debugLog("TMDB imageUrl($path) imgUri[$imgUri] link[${builder.build()}]")
         return builder.build().toString()
     }

@@ -22,6 +22,7 @@ import top.rootu.lampa.content.LampaProvider.THRW
 import top.rootu.lampa.content.LampaProvider.VIEW
 import top.rootu.lampa.helpers.ChannelHelper
 import top.rootu.lampa.helpers.Coroutines
+import top.rootu.lampa.helpers.D1VAuth
 import top.rootu.lampa.helpers.Helpers.buildPendingIntent
 import top.rootu.lampa.helpers.Helpers.getDefaultPosterUri
 import top.rootu.lampa.helpers.capitalizeFirstLetter
@@ -282,12 +283,15 @@ object ChannelManager {
                 if (releaseYear.isNotEmpty()) setReleaseDate(releaseYear)
                 card.vote_average?.let { setReviewRating((it / 2).toString()) }
                 if (provName == RECS && !card.background_image.isNullOrEmpty()) {
-                    setPosterArtUri(card.background_image?.toUri())
+                    // Постеры теперь на нашем сервере, а качает их системный лаунчер —
+                    // подписываем ключом периметра, иначе вне дома придёт 404 (см. D1VAuth)
+                    val backgroundUri = D1VAuth.signUri(card.background_image)
+                    setPosterArtUri(backgroundUri)
                         .setPosterArtAspectRatio(TvContractCompat.PreviewProgramColumns.ASPECT_RATIO_16_9)
-                    setThumbnailUri(card.background_image?.toUri())
+                    setThumbnailUri(backgroundUri)
                         .setThumbnailAspectRatio(TvContractCompat.PreviewProgramColumns.ASPECT_RATIO_16_9)
                 } else {
-                    val posterUri = card.img?.toUri() ?: getDefaultPosterUri()
+                    val posterUri = D1VAuth.signUri(card.img) ?: getDefaultPosterUri()
                     setPosterArtUri(posterUri)
                         .setPosterArtAspectRatio(TvContractCompat.PreviewProgramColumns.ASPECT_RATIO_2_3)
                 }

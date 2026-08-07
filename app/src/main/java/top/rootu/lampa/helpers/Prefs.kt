@@ -93,12 +93,18 @@ object Prefs {
             ?: Locale.getDefault().language
         set(lang) = appPrefs.edit().putString(APP_LANG, lang).apply()
 
+    // D1Vision: адрес мимо наших хостов игнорируем и откатываемся на прокси своего сервера
+    // ([TMDB.APIURL]/[TMDB.IMGURL]) — иначе значение, зеркалированное со страницы при
+    // выключенном proxy_tmdb (или оставшееся в prefs с прежних версий), увело бы клиента
+    // напрямую на api.themoviedb.org.
     var Context.tmdbApiUrl: String
-        get() = appPrefs.getString(TMDB_API_KEY, TMDB.APIURL) ?: TMDB.APIURL
+        get() = appPrefs.getString(TMDB_API_KEY, null)
+            ?.takeIf { HostResolver.isOurUrl(this, it) } ?: TMDB.APIURL
         set(url) = appPrefs.edit().putString(TMDB_API_KEY, url).apply()
 
     var Context.tmdbImgUrl: String
-        get() = appPrefs.getString(TMDB_IMG_KEY, TMDB.IMGURL) ?: TMDB.IMGURL
+        get() = appPrefs.getString(TMDB_IMG_KEY, null)
+            ?.takeIf { HostResolver.isOurUrl(this, it) } ?: TMDB.IMGURL
         set(url) = appPrefs.edit().putString(TMDB_IMG_KEY, url).apply()
 
     val Context.firstRun: Boolean

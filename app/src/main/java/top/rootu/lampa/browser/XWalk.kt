@@ -1,5 +1,8 @@
 package top.rootu.lampa.browser
 
+import android.content.Intent
+import android.net.Uri
+import android.util.Log
 import android.view.View
 import org.xwalk.core.XWalkResourceClient
 import org.xwalk.core.XWalkView
@@ -24,6 +27,31 @@ class XWalk(override val mainActivity: MainActivity, override val viewResId: Int
                     override fun onLoadFinished(view: XWalkView, url: String) {
                         super.onLoadFinished(view, url)
                         mainActivity.onBrowserPageFinished(view, url)
+                    }
+
+                    /**
+                     * D1Vision: allowlist навигации — как в [top.rootu.lampa.browser.SysView]
+                     * (здесь его не было вовсе). Страница видит мост `AndroidJS`, поэтому
+                     * грузим только свои хосты; внешнюю ссылку отдаём системному браузеру.
+                     * XWalk не сообщает ни фрейм, ни жест — фильтруем все переходы.
+                     */
+                    override fun shouldOverrideUrlLoading(view: XWalkView?, url: String?): Boolean {
+                        if (url.isNullOrEmpty()) return false
+                        if (url.startsWith("about:", true) || url.startsWith("data:", true)
+                            || url.startsWith("blob:", true)
+                        ) return false
+                        if (HostResolver.isOurUrl(App.context, url)) return false
+                        Log.w(TAG, "Blocked navigation to foreign host: $url")
+                        if (url.startsWith("http://", true) || url.startsWith("https://", true)) {
+                            try {
+                                mainActivity.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                )
+                            } catch (e: Exception) {
+                                Log.e(TAG, "No app to open $url: ${e.message}")
+                            }
+                        }
+                        return true
                     }
 
                     override fun onReceivedLoadError(
@@ -73,6 +101,7 @@ class XWalk(override val mainActivity: MainActivity, override val viewResId: Int
     private var reconnecting = false
 
     private companion object {
+        const val TAG = "XWalk"
         const val RECONNECT_INTERVAL_MS = 5000L
     }
 

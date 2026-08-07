@@ -22,6 +22,7 @@ import top.rootu.lampa.App
 import top.rootu.lampa.BuildConfig
 import top.rootu.lampa.R
 import top.rootu.lampa.content.LampaProvider
+import top.rootu.lampa.helpers.D1VAuth
 import top.rootu.lampa.helpers.Helpers.buildPendingIntent
 import top.rootu.lampa.helpers.Helpers.getDefaultPosterUri
 import top.rootu.lampa.helpers.Helpers.isAndroidTV
@@ -122,7 +123,8 @@ object RecsService {
             builder.setContentTypes(arrayOf(ContentRecommendation.CONTENT_TYPE_MOVIE))
         }
 
-        card.background_image?.let { builder.setBackgroundImageUri(it) }
+        // Фон рекомендации тянет лаунчер — подписываем ключом периметра (см. D1VAuth)
+        card.background_image?.let { builder.setBackgroundImageUri(D1VAuth.sign(it) ?: it) }
 
         val notification = builder.build().getNotificationObject(context)
         @Suppress("DEPRECATION")

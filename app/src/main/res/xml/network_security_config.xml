@@ -1,16 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    D1Vision:
+    * пользовательские CA (<certificates src="user"/>) убраны из base-config — с ними любой
+      установленный на устройстве корень прокси читал бы ВЕСЬ трафик приложения; наши домены
+      отдают настоящий Let's Encrypt, который есть в системном хранилище;
+    * cleartext оставлен ТОЛЬКО для домашнего сервера (LAN идёт по http, TLS там нет).
+      ⚠️ Добавляешь новый http-хост (bootstrap `fallbackHosts` или `clientHosts` в init.conf) —
+      впиши его домен/IP сюда, иначе Java-стек и WebView его не откроют. Нативный libVLC
+      этой политике не подчиняется, воспроизведение по http не затрагивается.
+-->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="true">
+    <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
-            <certificates src="user" />
         </trust-anchors>
     </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">192.168.87.24</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <!--
+            Осознанное исключение (см. AndroidJS.BRIDGE_EXCEPTIONS): штатный торрент-парсер
+            Lampa. Сервер ставит `jackett_url = jac.red`, пока `initPlugins.jacred` выключен,
+            а Lampa дописывает схему по протоколу страницы — дома это http.
+        -->
+        <domain includeSubdomains="true">jac.red</domain>
+    </domain-config>
     <domain-config>
         <domain includeSubdomains="true">cub.watch</domain>
         <trust-anchors>
             <certificates src="system"/>
-            <certificates src="user" />
             <certificates src="@raw/cub_watch"/>
             <certificates src="@raw/cub_watch2"/>
             <certificates src="@raw/cub_watch3"/>

@@ -114,7 +114,11 @@ class SysView(override val mainActivity: MainActivity, override val viewResId: I
             setNeedInitialFocus(false)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            settings?.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            // D1Vision: ALWAYS_ALLOW пускал на https-странице активный http-контент
+            // (скрипты, XHR) — в чужой сети это подмена кода. COMPATIBILITY блокирует
+            // активный, но оставляет пассивный (картинки): LAN идёт по http целиком
+            // (правило mixed content к нему не применяется), внешний вход — https целиком.
+            settings?.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
             settings?.mediaPlaybackRequiresUserGesture = false
@@ -134,22 +138,9 @@ class SysView(override val mainActivity: MainActivity, override val viewResId: I
             @Deprecated("Deprecated in Java")
             override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
                 debugLog("shouldOverrideUrlLoading(view, url) view $view url $url")
-                url?.let {
-                    if (it.startsWith("tg://")) {
-                        // Handle Telegram link
-                        if (isTelegramInstalled(mainActivity)) {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                            mainActivity.startActivity(intent)
-                        } else {
-                            // App.toast("Telegram app is not installed. Get in on Google Play.")
-                            redirectToTelegramPlayStore()
-                        }
-                        return true // Indicate that the URL has been handled
-                    }
-                }
-                return false // Load the URL in the WebView for other links
-                // this will fail for non-http(s) links like lampa:// intent:// etc
-                //return super.shouldOverrideUrlLoading(view, url)
+                // Старый колбэк (API < 21) не знает ни фрейма, ни жеста — считаем переход
+                // пользовательским в главном фрейме
+                return handleNavigation(url, isMainFrame = true, hasGesture = true)
             }
 
             // https://developer.android.com/reference/android/webkit/WebViewClient#shouldOverrideUrlLoading(android.webkit.WebView,%20android.webkit.WebResourceRequest)
@@ -159,19 +150,59 @@ class SysView(override val mainActivity: MainActivity, override val viewResId: I
                 request: WebResourceRequest
             ): Boolean {
                 debugLog("shouldOverrideUrlLoading(view, request) view $view request $request")
-                if (request.url.scheme.equals("tg", true)) {
+                return handleNavigation(
+                    request.url?.toString(),
+                    isMainFrame = request.isForMainFrame,
+                    hasGesture = request.hasGesture()
+                )
+            }
+
+            /**
+             * D1Vision: allowlist навигации. Главный фрейм грузим только с наших хостов
+             * ([HostResolver.isOurUrl]): страница в WebView видит мост `AndroidJS`
+             * (плеер, хранилище, произвольные HTTP-запросы), поэтому чужой документ здесь —
+             * чужой код внутри приложения. Внешнюю ссылку, нажатую пользователем, отдаём
+             * системному браузеру; автоматические переходы просто глушим.
+             *
+             * @return true — переход обработан/запрещён, WebView его не грузит.
+             */
+            private fun handleNavigation(
+                url: String?,
+                isMainFrame: Boolean,
+                hasGesture: Boolean
+            ): Boolean {
+                if (url.isNullOrEmpty()) return false
+                if (url.startsWith("tg://", true)) {
+                    // Handle Telegram link
                     if (isTelegramInstalled(mainActivity)) {
-                        val intent = Intent(Intent.ACTION_VIEW, request.url)
-                        mainActivity.startActivity(intent)
+                        mainActivity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                     } else {
                         // App.toast("Telegram app is not installed. Get in on Google Play.")
                         redirectToTelegramPlayStore()
                     }
                     return true // Indicate that the URL has been handled
                 }
-                return false // Load the URL in the WebView for other links
-                // this will fail for non-http(s) links like lampa:// intent:// etc
-                //return super.shouldOverrideUrlLoading(view, request)
+                // Служебные схемы самого WebView (about:blank, data:, blob:) — не трогаем
+                if (url.startsWith("about:", true) || url.startsWith("data:", true)
+                    || url.startsWith("blob:", true)
+                ) return false
+                // Подресурсы и iframe не фильтруем: их второй контур — мост (AndroidJS.httpReq)
+                if (!isMainFrame) return false
+                if (HostResolver.isOurUrl(mainActivity, url)) return false // грузим как раньше
+                Log.w(LOG_TAG, "Blocked navigation to foreign host: $url")
+                // Клик пользователя по внешней ссылке уводим наружу, в системный браузер
+                if (hasGesture && (url.startsWith("http://", true) ||
+                            url.startsWith("https://", true))
+                ) openExternally(url)
+                return true
+            }
+
+            private fun openExternally(url: String) {
+                try {
+                    mainActivity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                } catch (e: Exception) {
+                    Log.e(LOG_TAG, "No app to open $url: ${e.message}")
+                }
             }
 
 
@@ -281,14 +312,21 @@ class SysView(override val mainActivity: MainActivity, override val viewResId: I
                 }
             }
 
-            @SuppressLint("WebViewClientOnReceivedSslError")
+            /**
+             * D1Vision: сертификат не принимаем НИ ПРИ КАКИХ условиях (было `proceed()`
+             * на любой). Наши домены (`tv/tv2.d1versy.com`) отдают настоящий Let's Encrypt,
+             * а LAN идёт по http и до TLS не доходит вовсе — то есть законного повода для
+             * ошибки TLS у клиента нет: она означает подмену в чужой сети. Отказ роняет
+             * загрузку в `onReceivedError`, а там уже работает штатный перебор хостов и
+             * экран «Сервер недоступен» — пользователь не остаётся с чёрным экраном.
+             */
             override fun onReceivedSslError(
                 view: WebView?,
                 handler: SslErrorHandler?,
                 error: SslError?
             ) {
-                debugLog("Ignore SSL error: $error")
-                handler?.proceed() // Ignore SSL certificate errors
+                Log.w(LOG_TAG, "SSL error, connection cancelled: $error")
+                handler?.cancel()
             }
         }
 

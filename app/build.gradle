@@ -205,8 +205,8 @@ dependencies {
     def okhttpVersion = '3.12.13' // okhttp 3.12.13 - latest version for API < 21
     //noinspection GradleDependency
     implementation "com.squareup.okhttp3:okhttp:$okhttpVersion"
-    //noinspection GradleDependency
-    implementation "com.squareup.okhttp3:okhttp-dnsoverhttps:$okhttpVersion"
+    // okhttp-dnsoverhttps убран вместе с резолвером Quad9: клиент ходит только на свой
+    // сервер, а сторонний DoH видел бы даже обращения к нашему домену (см. tmdb/TMDB.kt)
     implementation 'org.brotli:dec:0.1.2'
     //noinspection GradleDependency
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kp_version" // or jdk7

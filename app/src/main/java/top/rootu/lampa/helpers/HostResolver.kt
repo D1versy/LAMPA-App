@@ -112,6 +112,27 @@ object HostResolver {
     }
 
     /**
+     * D1Vision: наш ли это хост — единый allowlist для навигации WebView, моста
+     * `AndroidJS.httpReq` и адресов TMDB-прокси. Наши — приватные IP и домены проекта
+     * ([D1VAuth.isOurHost]) плюс хосты кандидатов (bootstrap + OTA-список + кастомный
+     * адрес пользователя): OTA-хост может жить на чужом домене, но его назначает владелец.
+     */
+    fun isOurHost(context: Context, host: String?): Boolean {
+        if (host.isNullOrEmpty()) return false
+        if (D1VAuth.isOurHost(host)) return true
+        return buildCandidates(context).any {
+            HttpUrl.parse(it)?.host()?.equals(host, true) == true
+        }
+    }
+
+    /** То же для полного URL: разрешаем только http(s) на наши хосты. */
+    fun isOurUrl(context: Context, url: String?): Boolean {
+        if (url.isNullOrEmpty()) return false
+        val parsed = HttpUrl.parse(url) ?: return false // не http(s) — сразу мимо
+        return isOurHost(context, parsed.host())
+    }
+
+    /**
      * Сколько первых кандидатов «защищены» от проигрыша по grace: кастомный адрес
      * пользователя (кандидат №0), если он попал в начало списка (условие зеркалит
      * [buildCandidates]) — явный выбор не должен молча проигрывать быстрому LAN.

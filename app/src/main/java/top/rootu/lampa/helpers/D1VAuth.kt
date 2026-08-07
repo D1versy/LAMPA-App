@@ -37,6 +37,14 @@ object D1VAuth {
         return false
     }
 
+    /**
+     * Подписанный URI для ЧУЖОГО процесса: постеры каналов Android TV качает системный
+     * лаунчер, ключа периметра у него нет — вне дома картинка иначе не откроется. Ключ
+     * оседает в локальной БД TvProvider на устройстве (принято владельцем осознанно).
+     */
+    fun signUri(url: String?): Uri? =
+        sign(url)?.takeIf { it.isNotEmpty() }?.let { Uri.parse(it) }
+
     /** Дописать d1v=<key> к URL для наших хостов; иначе вернуть без изменений. */
     fun sign(url: String?): String? {
         if (url.isNullOrEmpty() || key.isEmpty()) return url

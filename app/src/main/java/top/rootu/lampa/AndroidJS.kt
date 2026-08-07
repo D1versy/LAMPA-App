@@ -25,6 +25,7 @@ import top.rootu.lampa.helpers.Helpers.debugLog
 import top.rootu.lampa.helpers.Helpers.filterValidCubBookmarks
 import top.rootu.lampa.helpers.Helpers.isTvContentProviderAvailable
 import top.rootu.lampa.helpers.Helpers.isValidJson
+import top.rootu.lampa.helpers.HostResolver
 import top.rootu.lampa.helpers.Prefs.appLang
 import top.rootu.lampa.helpers.Prefs.lampaSource
 import top.rootu.lampa.helpers.Prefs.saveAccountBookmarks
@@ -54,6 +55,10 @@ class AndroidJS(private val mainActivity: MainActivity, private val browser: Bro
         // Constants
         private const val TAG = "AndroidJS"
         private const val UPDATE_DELAY = 5000L // in ms, wait before update TV channel
+
+        // Чужие хосты, которым мост всё же разрешён (см. isAllowedBridgeUrl).
+        // Совпадение по хосту целиком или по поддомену.
+        private val BRIDGE_EXCEPTIONS = setOf("jac.red", "jacred.xyz", "jacred.pro")
     }
 
     @JavascriptInterface
@@ -131,7 +136,9 @@ class AndroidJS(private val mainActivity: MainActivity, private val browser: Bro
 
                 "baseUrlApiTMDB" -> {
                     val newUrl = eo.optString("value", TMDB.APIURL)
-                    if (newUrl.startsWith("http", true) &&
+                    // Адрес принимаем только на наши хосты: страница может отдать
+                    // api.themoviedb.org (proxy_tmdb выключен) — наружу не ходим
+                    if (HostResolver.isOurUrl(mainActivity, newUrl) &&
                         !newUrl.contains(mainActivity.tmdbApiUrl, true)
                     ) {
                         mainActivity.tmdbApiUrl = newUrl
@@ -149,7 +156,8 @@ class AndroidJS(private val mainActivity: MainActivity, private val browser: Bro
 
                 "baseUrlImageTMDB" -> {
                     val newUrl = eo.optString("value", TMDB.IMGURL)
-                    if (newUrl.startsWith("http", true) &&
+                    // см. baseUrlApiTMDB — принимаем только наши хосты
+                    if (HostResolver.isOurUrl(mainActivity, newUrl) &&
                         !newUrl.contains(mainActivity.tmdbImgUrl, true)
                     ) {
                         mainActivity.tmdbImgUrl = newUrl
@@ -312,6 +320,41 @@ class AndroidJS(private val mainActivity: MainActivity, private val browser: Bro
         }
     }
 
+    /**
+     * D1Vision: мост виден ЛЮБОМУ загруженному документу, поэтому URL проверяем вторым
+     * контуром — навигацию мы уже сузили до своих хостов (SysView/XWalk), но одного вызова
+     * `httpReq` хватило бы, чтобы фильтр обойти (мост — произвольный HTTP-запрос из
+     * приложения, то есть готовый канал утечки).
+     *
+     * Через мост в нашей сборке реально ходят: проверка и обновление плагинов, проба
+     * TorrServer (LAN), онлайн-балансеры lampac (`/lite/…` — наш же хост) и штатный
+     * торрент-парсер Lampa. Все они, кроме парсера, живут на наших хостах.
+     *
+     * [BRIDGE_EXCEPTIONS] — осознанное исключение владельца «видео/раздачи»: сервер
+     * выставляет `jackett_url` наружу на `jac.red`, пока `initPlugins.jacred` выключен
+     * (см. lampac `ApiController.LampaInit`). Если какой-то установленный балансер
+     * перестанет отвечать — в логе будет `httpReq blocked`, хост дописывается сюда.
+     */
+    private fun isAllowedBridgeUrl(url: String): Boolean {
+        if (HostResolver.isOurUrl(mainActivity, url)) return true
+        val host = url.toUri().host?.lowercase() ?: return false
+        return BRIDGE_EXCEPTIONS.any { host == it || host.endsWith(".$it") }
+    }
+
+    /** Отказ отдаём странице штатным колбэком ошибки, чтобы запрос не «завис». */
+    private fun denyRequest(url: String, returnI: Int) {
+        Log.w(TAG, "httpReq blocked (host not ours): $url")
+        reqResponse[returnI.toString()] = JSONObject().apply {
+            putSafe("status", 403)
+            putSafe("message", "request blocked: host is not allowed")
+        }.toString()
+        mainActivity.runOnUiThread {
+            browser.evaluateJavascript("Lampa.Android.httpCall($returnI, 'error')") {
+                debugLog(TAG, "httpReq blocked callback sent for $returnI")
+            }
+        }
+    }
+
     @JavascriptInterface
     @org.xwalk.core.JavascriptInterface
     fun httpReq(str: String, returnI: Int) {
@@ -323,6 +366,10 @@ class AndroidJS(private val mainActivity: MainActivity, private val browser: Bro
             // Extract all parameters upfront
             val url = jsonObject.optString("url").takeIf { it.isNotEmpty() }
                 ?: throw IllegalArgumentException("URL cannot be empty")
+            if (!isAllowedBridgeUrl(url)) {
+                denyRequest(url, returnI)
+                return
+            }
             val data = jsonObject.opt("post_data")
             val returnHeaders = jsonObject.optBoolean("returnHeaders", false)
              // Optional dataType: "base64" forces binary-safe response encoding.

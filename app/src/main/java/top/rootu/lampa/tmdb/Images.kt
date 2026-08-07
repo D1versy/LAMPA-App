@@ -1,7 +1,6 @@
 package top.rootu.lampa.tmdb
 
 import android.net.Uri
-import android.os.Build
 import androidx.core.net.toUri
 import okhttp3.Request
 import top.rootu.lampa.App
@@ -27,20 +26,18 @@ object Images {
             .path("$basePath/${entity.media_type}/${entity.id}/images")
 
         val params = mutableMapOf<String, String>()
-        // key must be 1st
-        params["api_key"] = TMDB.APIKEY
+        // api_key не шлём: ключ подставляет наш сервер (см. TMDB.kt)
         params["language"] = TMDB.getLang()
         params["include_image_language"] = "${TMDB.getLang()},en,null"
         for (param in params) {
             urlBuilder.appendQueryParameter(param.key, param.value)
         }
         // Add all original query parameters
-        if (apiUrl != TMDB.APIURL)
-            apiUri.queryParameterNames.forEach { paramName ->
-                apiUri.getQueryParameter(paramName)?.let { paramValue ->
-                    urlBuilder.appendQueryParameter(paramName, paramValue)
-                }
+        apiUri.queryParameterNames.forEach { paramName ->
+            apiUri.getQueryParameter(paramName)?.let { paramValue ->
+                urlBuilder.appendQueryParameter(paramName, paramValue)
             }
+        }
         val link = urlBuilder.build().toString()
 
         var body: String? = null
@@ -48,9 +45,7 @@ object Images {
             val request = Request.Builder()
                 .url(link)
                 .build()
-            val client = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
-                TMDB.startWithQuad9DNS() else TMDB.permissiveOkHttp()
-            client.newCall(request).execute().use { response ->
+            TMDB.okHttp.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) throw IOException("Unexpected code $response")
                 body = response.body()?.string()
                 response.body()?.close()
