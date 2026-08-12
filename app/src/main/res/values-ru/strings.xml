@@ -33,10 +33,6 @@
     <string name="player_quality">Качество</string>
     <string name="player_no_tracks">Дорожек нет</string>
     <string name="player_error">Ошибка воспроизведения</string>
-    <string name="player_slow_title">Приставка не тянет этот файл</string>
-    <string name="player_slow_msg">Видео декодируется процессором: %1$d кадров в секунду вместо примерно 24. Так бывает с 4K HDR/Dolby Vision и с AV1 — их видеочип телевизора не берёт. Ровно тот же фильм в 1080p H.264 или HEVC пойдёт без единой запинки.</string>
-    <string name="player_slow_watch">Смотреть как есть</string>
-    <string name="player_slow_exit">Выйти</string>
     <string name="input_url_title">Укажите адрес Lampa</string>
     <string name="select_player">Выбор плеера</string>
     <string name="select_player_reset">Выбранный плеер сброшен</string>

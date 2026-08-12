@@ -35,10 +35,6 @@
     <string name="player_quality">Quality</string>
     <string name="player_no_tracks">No tracks available</string>
     <string name="player_error">Playback error</string>
-    <string name="player_slow_title">This device can\'t keep up with the file</string>
-    <string name="player_slow_msg">Video is being decoded on the CPU: %1$d frames per second instead of about 24. This happens with 4K HDR/Dolby Vision and with AV1 — the TV\'s video chip does not take them. The same title in 1080p H.264 or HEVC will play smoothly.</string>
-    <string name="player_slow_watch">Watch anyway</string>
-    <string name="player_slow_exit">Exit</string>
     <string name="input_url_title">Please enter Lampa URL</string>
     <string name="select_player">Player selection</string>
     <string name="select_player_reset">The selected player has been reset</string>
