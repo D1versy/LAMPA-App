@@ -51,10 +51,31 @@
 
 Видео играет **встроенный** плеер [player/PlayerActivity.kt](app/src/main/java/top/rootu/lampa/player/PlayerActivity.kt) на `org.videolan.android:libvlc-all` — паритет с mac/iOS, где VLCKit встроен в приложение (эталон — `mac-app/LampaKit/PlayerCoordinator.swift`). Все кодеки (AC3/EAC3/DTS/HEVC) декодирует libVLC, отдельные плееры ставить не нужно.
 
-**Версия libVLC — `3.7.5`** (с versionCode 576; до этого 3.6.5). Берём верх **стабильной** ветки 3.x: `4.0.0-eap*` — превью с другим Java API, наш плеер на нём не собирается. Апгрейд внутри 3.x кода плеера не потребовал, но потянул за собой тулчейн — **что именно и почему, разобрано в `E:\Media-server\claude\06-fixes-and-gotchas.md` §BL.4**, там же таблица «симптом сборки → причина → лечение». Кратко, если будешь двигать версию дальше:
+### Какая версия libVLC (важно: 3.7.5 НЕ ИГРАЕТ)
+
+| Версия | Вердикт |
+|---|---|
+| **`3.6.5`** | **заведомо рабочая** (билды до 571). Сюда откатываемся, если эксперименты не удались |
+| `3.7.5` | ❌ **собирается, но не играет НИЧЕГО**: на живом ТВ приложение виснет при старте любого видео. Билд 576 отозван |
+| **`4.0.0-eap29`** | сейчас в бою (билд 578) — заход после провала 3.7.5. Превью-ветка, но собирается и требует правки ровно одного места (см. ниже) |
+
+**Что в 4.x поменялось для нас** (сигнатуры сверены `javap` по самому AAR): ломается **только** `showTrackDialog` — класса `MediaPlayer.TrackDescription` больше нет:
+
+| 3.x | 4.x |
+|---|---|
+| `audioTracks` / `spuTracks` | `getTracks(IMedia.Track.Type.Audio)` / `…Type.Text` → `IMedia.Track[]` |
+| `audioTrack` / `spuTrack` (Int) | `getSelectedTrack(type)?.id` — **String** |
+| `setAudioTrack(id)` / `setSpuTrack(id)` | `selectTrack(id: String)`, `unselectTrackType(type)` |
+
+Всё остальное (`LibVLC`/`Media`-конструкторы, `addOption`, `attachViews`, `setEventListener`, пять используемых событий вкл. `EndReached`, `setTime`, `addSlave`, `IMedia.Slave.Type.Subtitle`) в 4.x осталось прежним.
+⚠️ Субтитры в 4.x — `Type.**Text**` (не `Spu`), а пункт **«Отключить»** теперь наш: в 3.x его отдавал сам libVLC псевдодорожкой `id = -1`, в 4.x `getTracks` возвращает только реальные дорожки.
+
+**Тулчейн** (одинаково нужен и для 3.7.x, и для eap29 — у обоих `minCompileSdk=36`), разбор — **`E:\Media-server\claude\06-fixes-and-gotchas.md` §BL.4**:
 - `compileSdk 36` + `buildToolsVersion 36.0.0` + `android.aapt2FromMavenOverride` в [gradle.properties](gradle.properties) — иначе aapt2 от AGP 7.4.2 не читает ресурсы android-36 (`targetSdk`/`minSdk` при этом **не меняли**);
-- `resolutionStrategy.force` на `kotlin-stdlib*` версии проекта в [app/build.gradle](app/build.gradle) — libvlc-all 3.7.x объявляет в POM stdlib 2.2, на нём падает дексинг (R8 закреплён на 4.0.63). Самому libVLC stdlib не нужен: в AAR только Java-классы;
+- `resolutionStrategy.force` на `kotlin-stdlib*` версии проекта в [app/build.gradle](app/build.gradle) — POM libVLC объявляет stdlib 2.2, на нём падает дексинг (R8 закреплён на 4.0.63);
 - предупреждение Android «This app isn't 16 KB compatible» апгрейдом **не лечится** — у пребилдов VideoLAN `PT_GNU_RELRO` как был кратен 4 KB, так и остался (перепроверено на 3.7.5, см. §BL.3).
+
+⚠️ Зависимость libVLC **общая для всех флаворов**: телефонную сборку не публиковать, пока текущая версия не подтверждена на телевизоре.
 
 Схема: `AndroidJS.openPlayer` → `MainActivity.runPlayer` (парсит JSON, сохраняет state в `PlayerStateManager`) → **ранний выход** во внутренний `PlayerActivity` (state-JSON неподписанный — активность сама подписывает URL через `D1VAuth` и возвращает оригинальный url) → результат в тот же `resultLauncher` → generic-ветка `handleGenericPlayerResult` → `resultPlayer` → `Lampa.Timeline.update` + пометка предыдущих серий + WatchNext.
 
