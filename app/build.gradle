@@ -33,15 +33,8 @@ def getVersionName = { ->
 }
 
 android {
-    // D1Vision: 34 → 36 из-за libvlc-all 3.7.x (его aar-metadata требует minCompileSdk 36).
-    // Поднята ТОЛЬКО планка компиляции: targetSdk остаётся 28, minSdk 21 — рантайм-поведение
-    // и парк устройств не меняются. AGP 7.4.2 ругается «максимум рекомендованного — 33»,
-    // но собирает: платформа android-36 доложена в свой .toolchain/android-sdk.
-    //noinspection GradleDependency,ExpiredTargetSdkVersion
-    compileSdk 36
-    // ⚠️ Вместе с compileSdk 36 обязателен свежий aapt2: aapt2 из build-tools 34 не читает
-    // таблицу ресурсов android-36 («RES_TABLE_TYPE_TYPE entry offsets overlap»).
-    buildToolsVersion '36.0.0'
+    //noinspection GradleDependency
+    compileSdk 34
     defaultConfig {
         applicationId "top.rootu.lampa"
         // D1Vision: 16 → 21 из-за встроенного libVLC (требует ≥17); парк владельца — Android TV ≥5
@@ -194,18 +187,6 @@ android {
     namespace 'top.rootu.lampa'
 }
 
-// D1Vision: kotlin-stdlib держим на версии проекта. libvlc-all 3.7.x объявляет в POM stdlib 2.2,
-// Gradle выбрал бы старшую — и сборка падала бы на дексинге («Error while dexing» в
-// mergeExtDexLiteDebug): R8 закреплён на 4.0.63 (корневой build.gradle, ради старых API) и
-// формат stdlib 2.2 не понимает. Самому libVLC stdlib не нужен: в его AAR только Java-классы.
-configurations.configureEach {
-    resolutionStrategy {
-        force "org.jetbrains.kotlin:kotlin-stdlib:$kp_version"
-        force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kp_version"
-        force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kp_version"
-    }
-}
-
 dependencies {
     // https://developer.android.com/studio/write/java8-support#library-desugaring
     //noinspection GradleDependency 2.0.4 for AGP 7.4
@@ -277,14 +258,8 @@ dependencies {
     phoneImplementation 'org.conscrypt:conscrypt-android:2.6.2'
     //noinspection GradleDependency 1.8.1 fails on build with old gradle
     implementation 'org.mozilla:rhino:1.7.15' // JavaScript to run PAC file to get correct proxies
-    // D1Vision: встроенный плеер (паритет с VLCKit на mac/iOS) — см. player/PlayerActivity.kt.
-    // ⚠️ 3.7.5 СОБИРАЕТСЯ, НО НЕ ИГРАЕТ: на живом ТВ ни одно видео не стартует, приложение
-    // виснет на старте воспроизведения (билд 576 отозван). Поэтому пробуем ветку 4.0:
-    // у неё другой API выбора дорожек — см. showTrackDialog в PlayerActivity.
-    // Требует compileSdk 36 (см. выше) и по POM тянет kotlin-stdlib 2.2, на котором падает
-    // наш дексер (R8 4.0.63) — поэтому ниже stdlib закреплён на версии проекта.
-    // Заведомо рабочая версия, если этот заход не удастся, — 3.6.5.
-    implementation 'org.videolan.android:libvlc-all:4.0.0-eap29'
+    // D1Vision: встроенный плеер (паритет с VLCKit на mac/iOS) — см. player/PlayerActivity.kt
+    implementation 'org.videolan.android:libvlc-all:3.6.5'
     // crosswalk latest
     liteApi fileTree(dir: 'libs', include: ['xwalk_shared_library-23.53.589.4.aar'])
     ruStoreApi fileTree(dir: 'libs', include: ['xwalk_shared_library-23.53.589.4.aar'])

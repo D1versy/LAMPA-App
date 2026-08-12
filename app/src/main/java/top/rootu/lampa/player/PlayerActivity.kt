@@ -574,41 +574,16 @@ class PlayerActivity : BaseActivity() {
 
     // ─────────────────────────── дорожки и качество ───────────────────────────
 
-    /**
-     * Выбор аудиодорожки/субтитров. API libVLC 4.x: класса MediaPlayer.TrackDescription больше
-     * нет, дорожки приходят как IMedia.Track со СТРОКОВЫМ id, выбор — selectTrack(id).
-     *
-     * Три грабли перехода с 3.x, каждая проходит молча:
-     *  - субтитры здесь Type.**Text** (не Spu): перепутать с Video компилятор не мешает,
-     *    получится пустой список;
-     *  - id теперь String → сравнивать ==, а не === (иначе галочка «текущая» не появится);
-     *  - пункт «Отключить» в 3.x давал сам libVLC псевдодорожкой с id=-1, в 4.x getTracks
-     *    отдаёт только реальные дорожки → добавляем пункт сами, иначе включённые субтитры
-     *    нечем выключить. Тост «Дорожек нет» считаем по РЕАЛЬНЫМ дорожкам: с нашим пунктом
-     *    список никогда не бывает пустым.
-     */
     private fun showTrackDialog(isAudio: Boolean) {
-        val type = if (isAudio) IMedia.Track.Type.Audio else IMedia.Track.Type.Text
-        val tracks = (try { player.getTracks(type) } catch (e: Exception) {
-            Log.e(TAG, "getTracks failed", e); null
-        })?.filterNotNull() ?: emptyList()
+        val tracks = (if (isAudio) player.audioTracks else player.spuTracks) ?: emptyArray()
         if (tracks.isEmpty()) { App.toast(R.string.player_no_tracks); return }
-        val currentId = try { player.getSelectedTrack(type)?.id } catch (e: Exception) { null }
-
-        val names = ArrayList<String>()
-        names.add(getString(R.string.player_track_off) + if (currentId == null) "  ✓" else "")
-        tracks.forEach { t ->
-            val label = t.name?.takeIf { it.isNotBlank() }
-                ?: t.language?.takeIf { it.isNotBlank() }
-                ?: t.codec?.takeIf { it.isNotBlank() }
-                ?: t.id
-            names.add(label + if (t.id == currentId) "  ✓" else "")
-        }
+        val current = if (isAudio) player.audioTrack else player.spuTrack
+        val names = tracks.map { it.name + if (it.id == current) "  ✓" else "" }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle(if (isAudio) R.string.player_audio else R.string.player_subs)
-            .setItems(names.toTypedArray()) { d, which ->
+            .setItems(names) { d, which ->
                 d.dismiss()
-                if (which == 0) player.unselectTrackType(type) else player.selectTrack(tracks[which - 1].id)
+                if (isAudio) player.setAudioTrack(tracks[which].id) else player.setSpuTrack(tracks[which].id)
             }
             .setOnDismissListener { bumpOsd() }
             .show()
