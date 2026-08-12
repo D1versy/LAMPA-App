@@ -51,6 +51,11 @@
 
 Видео играет **встроенный** плеер [player/PlayerActivity.kt](app/src/main/java/top/rootu/lampa/player/PlayerActivity.kt) на `org.videolan.android:libvlc-all` — паритет с mac/iOS, где VLCKit встроен в приложение (эталон — `mac-app/LampaKit/PlayerCoordinator.swift`). Все кодеки (AC3/EAC3/DTS/HEVC) декодирует libVLC, отдельные плееры ставить не нужно.
 
+**Версия libVLC — `3.7.5`** (с versionCode 576; до этого 3.6.5). Берём верх **стабильной** ветки 3.x: `4.0.0-eap*` — превью с другим Java API, наш плеер на нём не собирается. Апгрейд внутри 3.x кода плеера не потребовал, но потянул за собой тулчейн — **что именно и почему, разобрано в `E:\Media-server\claude\06-fixes-and-gotchas.md` §BL.4**, там же таблица «симптом сборки → причина → лечение». Кратко, если будешь двигать версию дальше:
+- `compileSdk 36` + `buildToolsVersion 36.0.0` + `android.aapt2FromMavenOverride` в [gradle.properties](gradle.properties) — иначе aapt2 от AGP 7.4.2 не читает ресурсы android-36 (`targetSdk`/`minSdk` при этом **не меняли**);
+- `resolutionStrategy.force` на `kotlin-stdlib*` версии проекта в [app/build.gradle](app/build.gradle) — libvlc-all 3.7.x объявляет в POM stdlib 2.2, на нём падает дексинг (R8 закреплён на 4.0.63). Самому libVLC stdlib не нужен: в AAR только Java-классы;
+- предупреждение Android «This app isn't 16 KB compatible» апгрейдом **не лечится** — у пребилдов VideoLAN `PT_GNU_RELRO` как был кратен 4 KB, так и остался (перепроверено на 3.7.5, см. §BL.3).
+
 Схема: `AndroidJS.openPlayer` → `MainActivity.runPlayer` (парсит JSON, сохраняет state в `PlayerStateManager`) → **ранний выход** во внутренний `PlayerActivity` (state-JSON неподписанный — активность сама подписывает URL через `D1VAuth` и возвращает оригинальный url) → результат в тот же `resultLauncher` → generic-ветка `handleGenericPlayerResult` → `resultPlayer` → `Lampa.Timeline.update` + пометка предыдущих серий + WatchNext.
 
 Фичи: резюме позиции (seek строго ПОСЛЕ первого `Event.Playing` — libVLC до старта молча игнорирует seek), auto-next по плейлисту, аудио/суб-дорожки, внешние субтитры (`addSlave` после старта), меню качества с сохранением позиции, D-pad: ←/→ перемотка ±10с (удержание 30с/60с), OK — пауза+OSD, BACK — OSD/выход. `EndReached`/`Error` обрабатываются через `Handler.post` — вызов `stop()`/`setMedia()` из колбэка события = дедлок libVLC.
@@ -138,7 +143,7 @@ WebView JS-сниппет из `MainActivity.onBrowserPageFinished`. Что в �
 ## Сборка
 Поднят **self-contained тулчейн прямо в репо** — папка `.toolchain/` (в `.gitignore`, в гит не уедет), система не трогается:
 - `.toolchain/jdk/` — JDK 17 (Temurin)
-- `.toolchain/android-sdk/` — Android SDK: `platform-34`, `build-tools;34.0.0`, `platform-tools`; лицензии приняты (`.../licenses/`)
+- `.toolchain/android-sdk/` — Android SDK: `platform-34` и **`platform-36`**, `build-tools;34.0.0`/`35.0.0`/**`36.0.0`**, `platform-tools`; лицензии приняты (`.../licenses/`). Платформа и build-tools 36 доставлены под libVLC 3.7.x (см. раздел про плеер): `sdkmanager --sdk_root=<...>\.toolchain\android-sdk "platforms;android-36" "build-tools;36.0.0"`
 - `.toolchain/gradle-home/` — `GRADLE_USER_HOME` (дистрибутив Gradle 7.5.1 + кэш зависимостей, тоже вне системы)
 - `local.properties` → `sdk.dir=E:/LAMPA-App/.toolchain/android-sdk` (gitignored)
 
@@ -149,8 +154,12 @@ $env:JAVA_HOME=(Get-ChildItem "$tc\jdk" -Directory)[0].FullName
 $env:ANDROID_HOME="$tc\android-sdk"; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME
 $env:GRADLE_USER_HOME="$tc\gradle-home"
 cmd /c "E:\LAMPA-App\gradlew.bat -p E:\LAMPA-App --no-daemon assembleLiteDebug"
-#  → app/build/outputs/apk/lite/debug/app-lite-debug.apk   (~14.7 МБ, debug-подпись)
+#  → app/build/outputs/apk/lite/debug/app-lite-debug.apk   (~58 МБ со встроенным libVLC, debug-подпись)
 ```
+⚠️ **Публиковать (OTA) только с чистой сборки** — `clean assembleLiteDebug`. Инкрементальный
+zipflinger обновляет APK на месте и оставляет внутри дыры: после пары пересборок файл распухает
+вдвое (102 МБ вместо 58) при той же сумме записей. На установку не влияет, но качать это по воздуху
+незачем.
 Собрано и проверено: `top.rootu.lampa`, leanback-лаунчер (Android TV), `BuildConfig.defaultAppUrl = http://192.168.87.24:9118`.
 
 Флейворы: **`lite`** (собран; апдейтер + Crosswalk shared-lib), `full` (встраивает Crosswalk core, ~50 МБ AAR), `ruStore`, **`phone`** (телефонная аппка D1Vision Mobile — см. раздел выше).
