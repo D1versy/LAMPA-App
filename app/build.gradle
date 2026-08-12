@@ -60,6 +60,15 @@ android {
         def d1vFile = rootProject.file("local.properties")
         if (d1vFile.exists()) d1vFile.withInputStream { d1vProps.load(it) }
         buildConfigField "String", "d1vKey", "\"${d1vProps.getProperty('D1V_KEY_ANDROID', '')}\""
+
+        // D1Vision: канал OTA-самообновления — подпапка в client-builds/ на сервере, она же
+        // сегмент пути <host>/d1vision/apps/<канал>/... (см. helpers/Updater.kt). У ТВ-сборок
+        // канал android, у телефонной — androidphone: пакеты разные, каналы не должны пересекаться,
+        // иначе телефон скачал бы ТВ-APK и поставил его ОТДЕЛЬНЫМ приложением.
+        buildConfigField "String", "otaPlatform", "\"android\""
+        // Общий рубильник телефонных веток в общем коде (лок Live/Rec, тач-плеер, системные бары,
+        // полное меню). Дефолт false — ТВ-сборки ведут себя ровно как раньше.
+        buildConfigField "boolean", "phoneBuild", "false"
     }
 
     signingConfigs {
@@ -146,6 +155,23 @@ android {
             buildConfigField "String", "defaultAppUrl", "\"${defaultServerUrl}\""
             buildConfigField "String", "fallbackHosts", "\"${fallbackHosts}\""
         }
+        // ── Телефонная сборка D1Vision Mobile ────────────────────────────────────────────────
+        // Та же оболочка, что и ТВ-сборки (весь код общий, app/src/main), но:
+        //   • свой applicationId → обе аппки живут на одном устройстве и не мешают друг другу;
+        //   • свой OTA-канал → телефон обновляется телефонным APK;
+        //   • phoneBuild=true → включает телефонные ветки в общем коде;
+        //   • оверлей app/src/phone/ → ориентация, иконка, имя, без ТВ-компонентов.
+        // Разделы «D1versy Live» и «D1versy Rec» тут залочены (helpers/PhoneLock.kt).
+        // Crosswalk — как в lite (shared library), см. phoneApi в dependencies.
+        phone {
+            applicationIdSuffix ".phone"
+            versionNameSuffix "-phone"
+            buildConfigField "boolean", "enableUpdate", "true"
+            buildConfigField "String", "defaultAppUrl", "\"${defaultServerUrl}\""
+            buildConfigField "String", "fallbackHosts", "\"${fallbackHosts}\""
+            buildConfigField "String", "otaPlatform", "\"androidphone\""
+            buildConfigField "boolean", "phoneBuild", "true"
+        }
     }
 
     packagingOptions {
@@ -229,4 +255,6 @@ dependencies {
     liteApi fileTree(dir: 'libs', include: ['xwalk_shared_library-23.53.589.4.aar'])
     ruStoreApi fileTree(dir: 'libs', include: ['xwalk_shared_library-23.53.589.4.aar'])
     fullApi fileTree(dir: 'libs', include: ['xwalk_core_library-23.53.589.4.aar'])
+    // ⚠️ Обязательно: без своей строки у флавора org/xwalk/core/My*.java не компилируется
+    phoneApi fileTree(dir: 'libs', include: ['xwalk_shared_library-23.53.589.4.aar'])
 }

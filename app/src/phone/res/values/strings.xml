@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Оверлей строк телефонной сборки. Переопределяем ровно два значения, остальное — из main.
+-->
+<resources>
+    <!-- Имя в лончере: на устройстве могут стоять обе аппки, их надо различать -->
+    <string name="app_name" translatable="false">D1Vision Mobile</string>
+    <!--
+        ⚠️ Хост дип-линков lampa:// (AndroidManifest.xml, data android:host="@string/provider_auth").
+        Должен совпадать с applicationId телефонной сборки (top.rootu.lampa + суффикс .phone),
+        иначе обе установленные аппки claim'ят один и тот же хост и Android на КАЖДЫЙ дип-линк
+        показывает диалог выбора приложения.
+    -->
+    <string name="provider_auth" translatable="false">top.rootu.lampa.phone</string>
+</resources>

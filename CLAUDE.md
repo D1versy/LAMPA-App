@@ -59,6 +59,64 @@
 - **Код внешних плееров в MainActivity НЕ удалён** (configurePlayerIntent, showPlayerSelectionDialog, handle*PlayerResult) — мёртвый код после раннего выхода в `runPlayer`; откат = убрать один блок.
 - Прогресс просмотра уезжает и на сервер (qdl 2.18, Modules/Sync/TimeCode) — см. `E:\Media-server\claude\08-clients.md`.
 
+## Телефонная сборка «D1Vision Mobile» (флавор `phone`)
+
+Из этого же репо собирается **вторая аппка — под смартфон**, в которой разделы **«D1versy Live»**
+(эфир камер) и **«D1versy Rec»** (записи регистратора) **залочены**. Отдельного репозитория нет
+намеренно: весь код общий (`app/src/main`), поэтому любой фикс ТВ-аппки автоматически попадает
+и в телефонную. Отличия живут в флаворе `phone` и оверлей-директории **`app/src/phone/`**.
+
+```powershell
+cmd /c "E:\LAMPA-App\gradlew.bat -p E:\LAMPA-App --no-daemon assemblePhoneDebug"
+#  → app/build/outputs/apk/phone/debug/app-phone-debug.apk
+```
+
+**Что отличается:**
+
+| | ТВ (`lite`/`full`/`ruStore`) | Телефон (`phone`) |
+|---|---|---|
+| `applicationId` | `top.rootu.lampa` | `top.rootu.lampa.phone` (суффикс) — обе аппки стоят рядом |
+| `app_name` | `D1Vision` | `D1Vision Mobile` |
+| `provider_auth` | `top.rootu.lampa` | `top.rootu.lampa.phone` |
+| OTA-канал (`BuildConfig.otaPlatform`) | `android` | `androidphone` |
+| `BuildConfig.phoneBuild` | `false` | `true` |
+| ориентация | `userLandscape` на всё приложение | снята (плеер остаётся в альбоме) |
+| лончер | LAUNCHER + LEANBACK_LAUNCHER, ТВ-баннер | только LAUNCHER, адаптивная иконка |
+| ТВ-компоненты | `HomeWatch`, `SearchProvider`, `ContentJobService`/`ContentAlarmManager` | вырезаны из манифеста |
+| системные бары | sticky-immersive везде | видны в оболочке, фуллскрин только в плеере |
+| меню (`showMenuDialog`) | только «Выйти», полное — через adb | полное по умолчанию (нужна смена адреса сервера) |
+| плеер | пульт (`dispatchKeyEvent`) | пульт **+** тач: сикбар, тап, двойной тап ±10 с, драг-скраб |
+
+⚠️ **`provider_auth`** обязателен: это хост дип-линков `lampa://` (`AndroidManifest.xml`,
+`data android:host="@string/provider_auth"`). Если оставить общий — обе установленные аппки
+claim'ят один хост, и Android на каждый дип-линк спрашивает, какую открыть.
+
+⚠️ **OTA-каналы разные** намеренно: пакеты разные, и телефон, прочитав ТВ-манифест, поставил бы
+ТВ-APK **отдельным приложением** вместо обновления себя. Публикация —
+`pwsh scripts/publish-android-build.ps1 -Variant phoneDebug -Channel androidphone` в репо
+медиасервера.
+
+⚠️ **Новый флавор обязан иметь свою строку `phoneApi fileTree(...)`** в `dependencies`
+(рядом с `liteApi`/`fullApi`/`ruStoreApi`) — иначе `org/xwalk/core/My*.java` не компилируется.
+
+### Как устроен лок Live/Rec — и что он на самом деле значит
+
+Пункты меню и экраны рисует **серверный** плагин `qdl.js` (форк `E:\lampac`), один и тот же для
+всех клиентов, поэтому «собрать другой APK» само по себе ничего не скрывает. Лок сделан **на
+клиенте** (решение владельца — сервер не трогаем): `helpers/PhoneLock.kt` инжектит в свой WebView
+JS-сниппет из `MainActivity.onBrowserPageFinished`, два слоя —
+1. CSS `display:none` на `.menu__item.qdl-watch-menu` и `.qdl-live-menu`;
+2. обёртка `Lampa.Activity.push`/`replace`, глушащая компоненты `qdl_live`, `qdl_live_watch`,
+   `qdl_live_camera` (история, дип-линки, восстановленное состояние).
+
+**Границы честно:** это СОКРЫТИЕ, не защита. Роуты `qdl/live/*` на сервере открыты — их можно
+дёрнуть браузером или curl'ом из LAN. Лок «от нечаянно», не «от злоумышленника».
+
+🔗 **Связность с форком:** опорные точки — CSS-классы `.qdl-watch-menu` / `.qdl-live-menu` и имена
+компонентов `qdl_live*` из `qdl.js`. Переименуют их там — лок молча перестанет работать.
+**При правках меню в `qdl.js` проверять телефонную сборку.** Имена классов, к слову, обманчивы
+(так в форке): `watch` = Live/эфир, `live` = Rec/записи.
+
 ## Сборка
 Поднят **self-contained тулчейн прямо в репо** — папка `.toolchain/` (в `.gitignore`, в гит не уедет), система не трогается:
 - `.toolchain/jdk/` — JDK 17 (Temurin)
@@ -77,7 +135,7 @@ cmd /c "E:\LAMPA-App\gradlew.bat -p E:\LAMPA-App --no-daemon assembleLiteDebug"
 ```
 Собрано и проверено: `top.rootu.lampa`, leanback-лаунчер (Android TV), `BuildConfig.defaultAppUrl = http://192.168.87.24:9118`.
 
-Флейворы: **`lite`** (собран; апдейтер + Crosswalk shared-lib), `full` (встраивает Crosswalk core, ~50 МБ AAR), `ruStore`.
+Флейворы: **`lite`** (собран; апдейтер + Crosswalk shared-lib), `full` (встраивает Crosswalk core, ~50 МБ AAR), `ruStore`, **`phone`** (телефонная аппка D1Vision Mobile — см. раздел выше).
 
 > **JDK:** сборка на **JDK 17** (в `.toolchain/`). Системный JDK не нужен. Если собирать своим — годится JDK 17 или 11, **но НЕ 21** (Gradle 7.5.1 его не тянет).
 > **Release-подпись:** задать env `KEYSTORE_FILE`/`KEYSTORE_PASSWORD`/`RELEASE_SIGN_KEY_ALIAS`/`RELEASE_SIGN_KEY_PASSWORD` (или `app/keystore/keystore_config`) → `assembleLiteRelease`. Без keystore релиз-подпись **пропускается** — обёрнута в `else if (System.getenv('KEYSTORE_FILE'))` в [app/build.gradle](app/build.gradle), иначе `file(null)` роняет даже debug-сборку на конфигурации.

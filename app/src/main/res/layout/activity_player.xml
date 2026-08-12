@@ -59,6 +59,21 @@
                 android:max="1000"
                 android:focusable="false" />
 
+            <!-- D1Vision: перетаскиваемая полоса для телефонной сборки. По умолчанию скрыта —
+                 на ТВ её быть не должно (фокус пульта не должен на ней застревать), включает
+                 её PlayerActivity при BuildConfig.phoneBuild, пряча при этом osdProgress. -->
+            <SeekBar
+                android:id="@+id/osdSeekBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:max="1000"
+                android:focusable="false"
+                android:minHeight="4dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp"
+                android:visibility="gone" />
+
             <TextView
                 android:id="@+id/osdTimeDur"
                 android:layout_width="wrap_content"

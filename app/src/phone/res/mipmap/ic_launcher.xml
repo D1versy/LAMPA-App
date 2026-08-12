@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Фолбэк для Android < 8.0 (adaptive-icon появился в API 26, у нас minSdk 21):
+    квалификатор mipmap-anydpi-v26 туда не доезжает, и берётся этот файл.
+    Тот же фон и тот же логотип, только без маски лончера — поэтому отступ меньше.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/ic_launcher_background" />
+    <item
+        android:drawable="@drawable/lampa_icon"
+        android:left="6dp"
+        android:top="6dp"
+        android:right="6dp"
+        android:bottom="6dp" />
+</layer-list>

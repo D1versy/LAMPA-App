@@ -7,13 +7,17 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.GestureDetector
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
 import android.widget.ProgressBar
+import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import org.json.JSONObject
+import kotlin.math.abs
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
@@ -21,6 +25,7 @@ import org.videolan.libvlc.interfaces.IMedia
 import org.videolan.libvlc.util.VLCVideoLayout
 import top.rootu.lampa.App
 import top.rootu.lampa.BaseActivity
+import top.rootu.lampa.BuildConfig
 import top.rootu.lampa.R
 import top.rootu.lampa.helpers.D1VAuth
 import top.rootu.lampa.helpers.hideSystemUI
@@ -57,6 +62,9 @@ class PlayerActivity : BaseActivity() {
         private const val OSD_HIDE_MS = 4000L
         private const val ENDED_PERCENT = 96      // как VIDEO_COMPLETED_DURATION_MAX_PERCENTAGE
         private const val SEEK_BASE_MS = 10_000L
+        // Тач-скраб: протащить палец через ВСЮ ширину экрана = столько перемотки.
+        // 120 с — компромисс: и по минуте отлистать, и секунду поймать не невозможно.
+        private const val SCRUB_FULL_MS = 120_000f
     }
 
     private data class Sub(val url: String, val label: String)
@@ -78,6 +86,13 @@ class PlayerActivity : BaseActivity() {
     private lateinit var osdTimeDur: TextView
     private lateinit var osdProgress: ProgressBar
     private lateinit var btnPlayPause: Button
+
+    // Тач-управление — только в телефонной сборке; на ТВ всё остаётся ровно как было.
+    private var osdSeekBar: SeekBar? = null
+    private var seekBarDragging = false   // пользователь тащит полосу — не перебивать её обновлениями
+    private var scrubbing = false         // идёт горизонтальный драг по видео
+    private var scrubBaseMs = 0L          // позиция на момент начала драга
+    private var scrubTargetMs = -1L       // куда встанем при отпускании
 
     private val handler = Handler(Looper.getMainLooper())
     private val hideOsdRunnable = Runnable { hideOsd() }
@@ -294,6 +309,126 @@ class PlayerActivity : BaseActivity() {
         audio.setOnClickListener { bumpOsd(); showTrackDialog(isAudio = true) }
         subs.setOnClickListener { bumpOsd(); showTrackDialog(isAudio = false) }
         quality.setOnClickListener { bumpOsd(); showQualityDialog() }
+
+        if (BuildConfig.phoneBuild) setupTouchControls()
+    }
+
+    /**
+     * D1Vision, телефонная сборка: пальцем то, что на ТВ делается пультом.
+     *  • перетаскиваемая полоса вместо индикатора-ProgressBar;
+     *  • одиночный тап по видео — показать/скрыть OSD (это уже умеет клик по playerRoot,
+     *    здесь он переезжает в детектор жестов, иначе двойной тап давал бы и два одиночных);
+     *  • двойной тап слева/справа — перемотка тем же seekBy (с той же акселерацией),
+     *    по центру — пауза;
+     *  • горизонтальный драг по видео — скраб: пока тащим, только рисуем позицию,
+     *    а сам seek делаем ОДИН раз на отпускании (иначе libVLC дёргается на каждом кадре).
+     * На ТВ ничего из этого не создаётся — dispatchKeyEvent и фокус-навигация не затронуты.
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupTouchControls() {
+        val root = findViewById<View>(R.id.playerRoot)
+        // клик-слушатель больше не нужен: тап обрабатывает детектор (см. onSingleTapConfirmed)
+        root.setOnClickListener(null)
+        root.isClickable = false
+
+        osdSeekBar = findViewById<SeekBar>(R.id.osdSeekBar).also { bar ->
+            if (!isIPTV) {
+                osdProgress.visibility = View.GONE
+                bar.visibility = View.VISIBLE
+            }
+            bar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
+                    if (!fromUser) return
+                    val dur = lastDurMs
+                    if (dur > 0) osdTimeCur.text = fmt(dur * progress / 1000)
+                }
+
+                override fun onStartTrackingTouch(sb: SeekBar) {
+                    seekBarDragging = true
+                    handler.removeCallbacks(hideOsdRunnable)   // не гасить панель под пальцем
+                }
+
+                override fun onStopTrackingTouch(sb: SeekBar) {
+                    seekBarDragging = false
+                    val dur = lastDurMs
+                    if (dur > 0) seekTo(dur * sb.progress / 1000)
+                    bumpOsd()
+                }
+            })
+        }
+
+        val gestures = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent) = true
+
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                if (osdVisible()) hideOsd() else showOsd()
+                return true
+            }
+
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                val w = root.width
+                when {
+                    isIPTV -> togglePause()
+                    e.x < w / 3f -> seekBy(-1)
+                    e.x > w * 2f / 3f -> seekBy(+1)
+                    else -> { togglePause(); showOsd() }
+                }
+                return true
+            }
+
+            override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
+                if (isIPTV || e1 == null) return false
+                val dur = lastDurMs
+                if (dur <= 0) return false
+                val totalX = e2.x - e1.x
+                val totalY = e2.y - e1.y
+                if (!scrubbing) {
+                    // жест засчитываем как скраб, только если он явно горизонтальный —
+                    // иначе вертикальные свайпы (шторка, будущая яркость) начинали бы мотать
+                    if (abs(totalX) < abs(totalY) || abs(totalX) < 24f) return false
+                    scrubbing = true
+                    scrubBaseMs = if (lastPosMs > 0) lastPosMs else player.time
+                }
+                val w = if (root.width > 0) root.width else 1
+                scrubTargetMs = (scrubBaseMs + (totalX / w * SCRUB_FULL_MS).toLong())
+                    .coerceIn(0L, dur - 1000)
+                showScrubUi(scrubTargetMs, dur)
+                return true
+            }
+        })
+
+        root.setOnTouchListener { _, ev ->
+            val handled = gestures.onTouchEvent(ev)
+            if (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) {
+                if (scrubbing) {
+                    scrubbing = false
+                    if (scrubTargetMs >= 0) seekTo(scrubTargetMs)
+                    scrubTargetMs = -1
+                    bumpOsd()
+                }
+            }
+            handled
+        }
+    }
+
+    /** Пока палец на экране — только рисуем будущую позицию, плеер не трогаем. */
+    private fun showScrubUi(targetMs: Long, durMs: Long) {
+        osdPanel.visibility = View.VISIBLE
+        handler.removeCallbacks(hideOsdRunnable)
+        osdTimeCur.text = fmt(targetMs)
+        osdTimeDur.text = fmt(durMs)
+        val p = (targetMs * 1000 / durMs).toInt()
+        osdProgress.progress = p
+        osdSeekBar?.progress = p
+    }
+
+    /** Единая точка перемотки на абсолютную позицию (тач); клавиши идут через seekBy. */
+    private fun seekTo(ms: Long) {
+        val dur = lastDurMs
+        val target = if (dur > 0) ms.coerceIn(0L, dur - 1000) else ms.coerceAtLeast(0L)
+        player.time = target
+        lastPosMs = target   // мгновенный отклик: player.time после записи отдаёт старое значение
+        updateProgressUi()
     }
 
     private fun osdVisible() = osdPanel.visibility == View.VISIBLE
@@ -337,10 +472,14 @@ class PlayerActivity : BaseActivity() {
 
     private fun updateProgressUi() {
         if (!osdVisible()) return
+        // пока пользователь тащит полосу или скрабит пальцем — позиция его, не плеера
+        if (seekBarDragging || scrubbing) return
         val dur = lastDurMs
         osdTimeCur.text = fmt(lastPosMs)
         osdTimeDur.text = fmt(dur)
-        osdProgress.progress = if (dur > 0) (lastPosMs * 1000 / dur).toInt() else 0
+        val p = if (dur > 0) (lastPosMs * 1000 / dur).toInt() else 0
+        osdProgress.progress = p
+        osdSeekBar?.progress = p
     }
 
     private fun fmt(ms: Long): String {

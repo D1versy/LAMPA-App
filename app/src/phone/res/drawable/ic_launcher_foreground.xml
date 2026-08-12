@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Foreground адаптивной иконки. Холст adaptive-icon — 108dp, «безопасная зона» — центральные 66dp:
+    всё, что снаружи, лончер может срезать своей маской (круг, squircle, капля).
+    Поэтому логотип вписан с отступом 22dp с каждой стороны → 64dp полезного поля.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:drawable="@drawable/lampa_icon"
+        android:left="22dp"
+        android:top="22dp"
+        android:right="22dp"
+        android:bottom="22dp" />
+</layer-list>

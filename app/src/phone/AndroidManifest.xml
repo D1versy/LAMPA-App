@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Оверлей телефонной сборки D1Vision Mobile (флавор phone).
+    Всё остальное наследуется из app/src/main/AndroidManifest.xml — здесь только отличия от ТВ.
+    Приём тот же, что у app/src/ruStore/AndroidManifest.xml: tools:node / tools:remove.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Android TV Channels / WatchNext — на телефоне EPG-провайдера нет -->
+    <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA" tools:node="remove" />
+    <uses-permission android:name="com.android.providers.tv.permission.WRITE_EPG_DATA" tools:node="remove" />
+
+    <!-- Телефон — устройство с тачем; leanback не нужен вовсе -->
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="true"
+        tools:replace="android:required" />
+    <uses-feature
+        android:name="android.software.leanback"
+        tools:node="remove" />
+
+    <application
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        tools:replace="android:icon,android:roundIcon"
+        tools:remove="android:screenOrientation,android:banner">
+        <!--
+            android:screenOrientation="userLandscape" в main лочит В АЛЬБОМ ВСЁ приложение —
+            для телефона это главный блокер, поэтому атрибут снимается.
+            У PlayerActivity свой sensorLandscape — он остаётся, видео смотрят в альбоме.
+            android:banner — баннер лончера Android TV, на телефоне не нужен.
+        -->
+
+        <activity android:name=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+                <!-- Телефонная сборка не должна показываться в лончерах Android TV -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" tools:node="remove" />
+            </intent-filter>
+        </activity>
+
+        <!-- Приём broadcast'ов главного экрана Android TV (каналы/«Продолжить просмотр») -->
+        <receiver android:name=".receivers.HomeWatch" tools:node="remove" />
+
+        <!-- Провайдер глобального поиска Android TV: снаружи его на телефоне никто не спросит,
+             а наш код к этому authority не обращается (проверено — вызовов вне search/ нет) -->
+        <provider android:name=".search.SearchProvider" tools:node="remove" />
+
+        <!-- Периодическое обновление ТВ-каналов/рекомендаций. Оба стартуют только из
+             Scheduler.scheduleUpdate(), а он выходит на !isAndroidTV — на телефоне мёртвый груз -->
+        <service android:name=".sched.ContentJobService" tools:node="remove" />
+        <service android:name=".sched.ContentAlarmManager" tools:node="remove" />
+    </application>
+</manifest>

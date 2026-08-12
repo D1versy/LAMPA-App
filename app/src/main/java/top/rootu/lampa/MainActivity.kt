@@ -92,6 +92,7 @@ import top.rootu.lampa.helpers.Helpers.isValidJson
 import top.rootu.lampa.helpers.D1VAuth
 import top.rootu.lampa.helpers.HostResolver
 import top.rootu.lampa.helpers.PermHelpers
+import top.rootu.lampa.helpers.PhoneLock
 import top.rootu.lampa.helpers.PermHelpers.hasMicPermissions
 import top.rootu.lampa.helpers.PermHelpers.isInstallPermissionDeclared
 import top.rootu.lampa.helpers.PermHelpers.verifyMicPermissions
@@ -125,6 +126,7 @@ import top.rootu.lampa.helpers.Prefs.wathToRemove
 import top.rootu.lampa.helpers.Updater
 import top.rootu.lampa.helpers.getAppVersion
 import top.rootu.lampa.helpers.hideSystemUI
+import top.rootu.lampa.helpers.showSystemUI
 import top.rootu.lampa.helpers.isAmazonDev
 import top.rootu.lampa.helpers.isSafeForUse
 import top.rootu.lampa.helpers.isTvBox
@@ -339,7 +341,7 @@ class MainActivity : BaseActivity(),
 
     override fun onResume() {
         super.onResume()
-        hideSystemUI()
+        applySystemBars()
         if (!isTvBox) setupFab()
         // Try to initialize again when the user completed updating and
         // returned to current activity. The browser.onResume() will do nothing if
@@ -396,7 +398,7 @@ class MainActivity : BaseActivity(),
         super.onConfigurationChanged(newConfig)
         lifecycleScope.launch {
             delay(300) // Small delay for configuration to settle
-            hideSystemUI()
+            applySystemBars()
             showFab(true)
         }
     }
@@ -458,6 +460,12 @@ class MainActivity : BaseActivity(),
         }
         if (view.visibility != View.VISIBLE) {
             view.visibility = View.VISIBLE
+        }
+        // D1Vision: телефонная сборка — прячем «D1versy Live» и «D1versy Rec».
+        // Как можно раньше и на каждую загрузку страницы: сниппет идемпотентный,
+        // а CSS должен лечь до отрисовки меню, иначе пункты мигнут. См. PhoneLock.
+        if (BuildConfig.phoneBuild) {
+            browser?.evaluateJavascript(PhoneLock.JS) { }
         }
         // Switch Loader (Note it control delayedVoidJsFunc)
         loaderView.visibility = View.GONE
@@ -843,7 +851,17 @@ class MainActivity : BaseActivity(),
     }
 
     private fun setupUI() {
-        hideSystemUI() // Must be invoked after setContentView!
+        applySystemBars() // Must be invoked after setContentView!
+    }
+
+    /**
+     * D1Vision: на ТВ оболочка всегда фуллскрин (sticky-immersive), а на телефоне прятать
+     * статус-бар и навигацию в браузере неудобно — часы, батарея и системный жест «назад»
+     * должны остаться. Полный экран телефону нужен только в плеере (PlayerActivity зовёт
+     * hideSystemUI у себя и этой веткой не затрагивается).
+     */
+    private fun applySystemBars() {
+        if (BuildConfig.phoneBuild) showSystemUI() else hideSystemUI()
     }
 
     override fun onXWalkInitStarted() {
@@ -1382,8 +1400,11 @@ class MainActivity : BaseActivity(),
      * `adb shell am start -n top.rootu.lampa/.MainActivity --es cmd open_settings` —
      * без неё перенацелить приложение при смерти всех хостов можно было бы только
      * очисткой данных.
+     *
+     * D1Vision: в телефонной сборке дефолт — полное меню. Лазейка через adb там неуместна
+     * (телефон в руках, кабеля под ним нет), а сменить адрес сервера пользователю нужно.
      */
-    private fun showMenuDialog(fullMenu: Boolean = false) {
+    private fun showMenuDialog(fullMenu: Boolean = BuildConfig.phoneBuild) {
         // Define menu items
         val menuItems = mutableListOf<MenuItem>()
 

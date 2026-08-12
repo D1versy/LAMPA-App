@@ -26,8 +26,11 @@ import javax.net.ssl.SSLSocketFactory
 /**
  * D1Vision OTA: самообновление APK с НАШЕГО сервера (не upstream GitHub).
  *
- * Источник — манифест на живом хосте Lampac (перебор LAN → tv → tv2 через [HostResolver]):
- *   GET <host>/d1vision/apps/android/manifest.json
+ * Источник — манифест на живом хосте Lampac (перебор LAN → tv → tv2 через [HostResolver]).
+ * Канал (сегмент пути) — BuildConfig.otaPlatform: `android` у ТВ-сборок, `androidphone` у телефонной.
+ * Каналы РАЗНЫЕ намеренно: пакеты разные, и телефон, прочитав ТВ-манифест, поставил бы ТВ-APK
+ * отдельным приложением вместо обновления себя.
+ *   GET <host>/d1vision/apps/<канал>/manifest.json
  *   {"versionCode":555,"versionName":"1.1","file":"D1Vision-android-555.apk","notes":"..."}
  * Сравнение — по числовому BuildConfig.VERSION_CODE (монотонный, из git rev-list), а НЕ по
  * строке tag_name (прежняя upstream-логика была хрупкой). Адрес сервера апдейтер не трогает —
@@ -92,7 +95,7 @@ object Updater {
             if (host.isEmpty()) return false
 
             val request = Request.Builder()
-                .url("$host/d1vision/apps/android/manifest.json")
+                .url("$host/d1vision/apps/${BuildConfig.otaPlatform}/manifest.json")
                 .header("User-Agent", HttpHelper.userAgent)
                 .build()
             val body = HttpHelper.getOkHttpClient(MANIFEST_TIMEOUT_MS).newCall(request).execute().use {
@@ -139,7 +142,7 @@ object Updater {
             val upd = update ?: return
             if (file.exists())
                 file.delete()
-            val link = "${upd.host}/d1vision/apps/android/${upd.file}"
+            val link = "${upd.host}/d1vision/apps/${BuildConfig.otaPlatform}/${upd.file}"
             try {
                 val url = URL(link)
                 val connection = if (link.startsWith("https"))
