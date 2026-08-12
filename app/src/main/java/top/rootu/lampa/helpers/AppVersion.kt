@@ -22,7 +22,9 @@ fun getAppVersion(
             packageManager.getPackageInfo(packageName, 0)
         }
         AppVersion(
-            versionName = packageInfo.versionName,
+            // С compileSdk 36 PackageInfo.versionName объявлен @Nullable (у приложений без
+            // versionName в манифесте он и правда null) — раньше платформа этого не сообщала.
+            versionName = packageInfo.versionName.orEmpty(),
             versionNumber = PackageInfoCompat.getLongVersionCode(packageInfo),
         )
     } catch (_: Exception) {
