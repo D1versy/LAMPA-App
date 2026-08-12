@@ -278,11 +278,13 @@ dependencies {
     //noinspection GradleDependency 1.8.1 fails on build with old gradle
     implementation 'org.mozilla:rhino:1.7.15' // JavaScript to run PAC file to get correct proxies
     // D1Vision: встроенный плеер (паритет с VLCKit на mac/iOS) — см. player/PlayerActivity.kt.
-    // 3.7.x требует compileSdk 36 (см. выше) и по POM тянет kotlin-stdlib 2.2 — но внутри AAR
-    // Kotlin-классов НЕТ (144 .class, все Java), stdlib ему не нужен вовсе. А наш дексер
-    // (R8 4.0.63, закреплён в корневом build.gradle) на stdlib 2.2 падает — поэтому ниже
-    // возвращаем версию проекта. Проверять при каждом апгрейде libVLC.
-    implementation 'org.videolan.android:libvlc-all:3.7.5'
+    // ⚠️ 3.7.5 СОБИРАЕТСЯ, НО НЕ ИГРАЕТ: на живом ТВ ни одно видео не стартует, приложение
+    // виснет на старте воспроизведения (билд 576 отозван). Поэтому пробуем ветку 4.0:
+    // у неё другой API выбора дорожек — см. showTrackDialog в PlayerActivity.
+    // Требует compileSdk 36 (см. выше) и по POM тянет kotlin-stdlib 2.2, на котором падает
+    // наш дексер (R8 4.0.63) — поэтому ниже stdlib закреплён на версии проекта.
+    // Заведомо рабочая версия, если этот заход не удастся, — 3.6.5.
+    implementation 'org.videolan.android:libvlc-all:4.0.0-eap29'
     // crosswalk latest
     liteApi fileTree(dir: 'libs', include: ['xwalk_shared_library-23.53.589.4.aar'])
     ruStoreApi fileTree(dir: 'libs', include: ['xwalk_shared_library-23.53.589.4.aar'])
