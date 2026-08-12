@@ -166,6 +166,10 @@ android {
         phone {
             applicationIdSuffix ".phone"
             versionNameSuffix "-phone"
+            // 21 → 23: несжатые .so в APK (extractNativeLibs=false, см. оверлей-манифест) умеет
+            // грузить только API 23+. Нужно ради 16 KB-совместимости на современных телефонах;
+            // ТВ-сборки остаются на 21 — там парк старых приставок.
+            minSdk 23
             buildConfigField "boolean", "enableUpdate", "true"
             buildConfigField "String", "defaultAppUrl", "\"${defaultServerUrl}\""
             buildConfigField "String", "fallbackHosts", "\"${fallbackHosts}\""
@@ -247,6 +251,11 @@ dependencies {
     implementation 'info.guardianproject.netcipher:netcipher:2.1.0' // SSL / TLS
     implementation 'junit:junit:4.13.2' // For Crosswalk compatibility
     implementation 'org.conscrypt:conscrypt-android:2.5.3' // for TLS v1.3 on API < 29
+    // D1Vision, только телефонная сборка: в 2.5.3 сегмент PT_GNU_RELRO у libconscrypt_jni.so
+    // выровнен на 4 KB, и Android 15+ ругается «RELRO segment not aligned»; в 2.6.2 выровнен.
+    // Объявлено как phoneImplementation, чтобы ТВ-сборка осталась на проверенной 2.5.3:
+    // Gradle разрешит конфликт версий в пользу старшей только внутри варианта phone.
+    phoneImplementation 'org.conscrypt:conscrypt-android:2.6.2'
     //noinspection GradleDependency 1.8.1 fails on build with old gradle
     implementation 'org.mozilla:rhino:1.7.15' // JavaScript to run PAC file to get correct proxies
     // D1Vision: встроенный плеер (паритет с VLCKit на mac/iOS) — см. player/PlayerActivity.kt

@@ -21,10 +21,18 @@
         tools:node="remove" />
 
     <application
+        android:extractNativeLibs="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         tools:replace="android:icon,android:roundIcon"
         tools:remove="android:screenOrientation,android:banner">
+        <!--
+            extractNativeLibs=false — .so лежат в APK НЕсжатыми и грузятся mmap'ом прямо оттуда.
+            Требование 16 KB-совместимости (Android 15+): сжатые библиотеки проверку не проходят.
+            Работает с API 23+, поэтому у флавора phone minSdk поднят до 23 (см. build.gradle).
+            Вторая половина требования — выравнивание записей в zip на 16 KB, его делает
+            zipalign -P 16 в scripts/publish-android-build.ps1 (AGP 7.4 умеет только 4 KB).
+        -->
         <!--
             android:screenOrientation="userLandscape" в main лочит В АЛЬБОМ ВСЁ приложение —
             для телефона это главный блокер, поэтому атрибут снимается.
