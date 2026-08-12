@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.GestureDetector
 import android.view.KeyEvent
@@ -65,6 +66,12 @@ class PlayerActivity : BaseActivity() {
         // Тач-скраб: протащить палец через ВСЮ ширину экрана = столько перемотки.
         // 120 с — компромисс: и по минуте отлистать, и секунду поймать не невозможно.
         private const val SCRUB_FULL_MS = 120_000f
+
+        // Сторож «картинка не тянется» (см. onPlaybackStarted). Судим не раньше 8 с реального
+        // воспроизведения: старт, буферизация и первый seek дают провал по кадрам всегда.
+        private const val WATCH_TICK_MS = 1000L
+        private const val WATCH_MIN_MS = 8000L
+        private const val WATCH_MIN_FPS = 15f
     }
 
     private data class Sub(val url: String, val label: String)
@@ -113,6 +120,11 @@ class PlayerActivity : BaseActivity() {
     private var seekStreak = 0
     private var lastSeekAt = 0L
 
+    // сторож частоты кадров
+    private var playingSinceMs = 0L   // первый Event.Playing текущего запуска
+    private var posAtPlayStart = 0L   // позиция на тот же момент
+    private var slowWarned = false    // предупредили один раз за элемент
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_player)
@@ -136,7 +148,16 @@ class PlayerActivity : BaseActivity() {
             return
         }
 
-        libVLC = LibVLC(this, arrayListOf("--http-reconnect"))
+        // Опции под слабое ТВ-железо. Все три работают ТОЛЬКО когда декодер приставки отказался
+        // и libVLC ушёл на программный путь — на аппаратном воспроизведении не сказываются никак.
+        // Замерено на TCL/Realtek rtd2851a (4K HEVC 10 бит, софтовый avcodec): 7 → 10 кадров/с.
+        //   --avcodec-fast            — разрешает неспекулятивные ускорения декодера
+        //   --avcodec-skiploopfilter  — пропуск деблокинга (качество чуть ниже, скорость выше)
+        //   --swscale-mode=0          — быстрый билинейный масштаб вместо бикубика: на 10-битном
+        //                               источнике конверсия I0AL→I420 идёт по 4K-кадру и стоит дорого
+        libVLC = LibVLC(this, arrayListOf(
+            "--http-reconnect", "--avcodec-fast", "--avcodec-skiploopfilter=4", "--swscale-mode=0"
+        ))
         player = MediaPlayer(libVLC)
         player.attachViews(videoLayout, null, false, false)
         player.setEventListener { ev -> onPlayerEvent(ev) }
@@ -195,6 +216,8 @@ class PlayerActivity : BaseActivity() {
         pendingSeekMs = if (item.startMs > 0) item.startMs else -1
         slavesAdded = false
         lastPosMs = 0; lastDurMs = 0
+        handler.removeCallbacks(pictureWatchdog)
+        playingSinceMs = 0; slowWarned = false
 
         Log.i(TAG, "playItem[$index] ${item.title ?: ""} seek=${pendingSeekMs}ms")
         val media = Media(libVLC, Uri.parse(signed))
@@ -232,7 +255,7 @@ class PlayerActivity : BaseActivity() {
                         }
                     }
                 }
-                handler.post { updatePlayPauseLabel() }
+                handler.post { updatePlayPauseLabel(); onPlaybackStarted() }
             }
 
             MediaPlayer.Event.TimeChanged -> {
@@ -252,6 +275,72 @@ class PlayerActivity : BaseActivity() {
                 App.toast(R.string.player_error)
                 finishWithResult(false)
             }
+        }
+    }
+
+    // ───────── сторож «картинка не тянется»: честное сообщение вместо чёрного экрана ─────────
+    //
+    // Отлажено на живом ТВ (TCL, Realtek rtd2851a, 32-битный ARM). Два случая, когда декодер
+    // приставки поток не берёт и libVLC молча уходит на процессор:
+    //   • 4K HEVC 10 бит HDR/Dolby Vision — MediaCodec отваливается через полсекунды
+    //     (AMediaCodec.queueInputBuffer failed), софтом выходит ~7-10 кадров/с;
+    //   • AV1 — libVLC вообще не отдаёт его в MediaCodec (в libvlc.so нет строки video/av01),
+    //     всегда dav1d на процессоре, ~16 кадров/с.
+    // Снаружи и то и другое выглядит одинаково: звук идёт, картинка чёрная или замерла, и
+    // зритель не понимает, что происходит. Сказать правду мы можем: считаем реально показанные
+    // кадры (IMedia.Stats.displayedPictures) и, если их меньше 15 в секунду при живом времени,
+    // один раз объясняем — с выбором «выйти» или «смотреть как есть». Само воспроизведение не
+    // трогаем: решение за зрителем.
+    private val pictureWatchdog = object : Runnable {
+        override fun run() {
+            checkPictureRate()
+            handler.postDelayed(this, WATCH_TICK_MS)
+        }
+    }
+
+    private fun onPlaybackStarted() {
+        if (playingSinceMs > 0L) return          // Playing приходит и после паузы
+        playingSinceMs = SystemClock.elapsedRealtime()
+        posAtPlayStart = lastPosMs.coerceAtLeast(0)
+        if (!isIPTV) handler.postDelayed(pictureWatchdog, WATCH_TICK_MS)
+    }
+
+    private fun checkPictureRate() {
+        if (slowWarned) { handler.removeCallbacks(pictureWatchdog); return }
+        if (!player.isPlaying) return                                  // пауза — не судим
+        val elapsed = SystemClock.elapsedRealtime() - playingSinceMs
+        if (elapsed < WATCH_MIN_MS) return
+        val pos = if (lastPosMs > 0) lastPosMs else player.time
+        if (pos - posAtPlayStart < 1000) return                        // время стоит: сеть/буфер, не декодер
+        val pics = displayedPictures()
+        if (pics < 0) { handler.removeCallbacks(pictureWatchdog); return }   // статистики нет — сторожить нечем
+        val fps = pics * 1000f / elapsed
+        if (fps >= WATCH_MIN_FPS) return
+        slowWarned = true
+        handler.removeCallbacks(pictureWatchdog)
+        Log.w(TAG, "картинка не тянется: $pics кадров за ${elapsed}мс (${fps.toInt()} к/с)")
+        showSlowDialog(fps.toInt())
+    }
+
+    /** Показанные кадры текущего медиа; -1 = не смогли узнать. getMedia() удерживает — освобождаем. */
+    private fun displayedPictures(): Int {
+        val m = try { player.media } catch (e: Exception) { null } ?: return -1
+        return try { m.stats?.displayedPictures ?: -1 } catch (e: Exception) { -1 } finally {
+            try { m.release() } catch (_: Exception) {}
+        }
+    }
+
+    private fun showSlowDialog(fps: Int) {
+        if (isFinishing || isDestroyed) return
+        try {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.player_slow_title)
+                .setMessage(getString(R.string.player_slow_msg, fps))
+                .setPositiveButton(R.string.player_slow_watch) { d, _ -> d.dismiss(); bumpOsd() }
+                .setNegativeButton(R.string.player_slow_exit) { d, _ -> d.dismiss(); finishWithResult(false) }
+                .show()
+        } catch (e: Exception) {
+            Log.e(TAG, "showSlowDialog failed", e)
         }
     }
 
@@ -574,41 +663,16 @@ class PlayerActivity : BaseActivity() {
 
     // ─────────────────────────── дорожки и качество ───────────────────────────
 
-    /**
-     * Выбор аудиодорожки/субтитров. API libVLC 4.x: класса MediaPlayer.TrackDescription больше
-     * нет, дорожки приходят как IMedia.Track со СТРОКОВЫМ id, выбор — selectTrack(id).
-     *
-     * Три грабли перехода с 3.x, каждая проходит молча:
-     *  - субтитры здесь Type.**Text** (не Spu): перепутать с Video компилятор не мешает,
-     *    получится пустой список;
-     *  - id теперь String → сравнивать ==, а не === (иначе галочка «текущая» не появится);
-     *  - пункт «Отключить» в 3.x давал сам libVLC псевдодорожкой с id=-1, в 4.x getTracks
-     *    отдаёт только реальные дорожки → добавляем пункт сами, иначе включённые субтитры
-     *    нечем выключить. Тост «Дорожек нет» считаем по РЕАЛЬНЫМ дорожкам: с нашим пунктом
-     *    список никогда не бывает пустым.
-     */
     private fun showTrackDialog(isAudio: Boolean) {
-        val type = if (isAudio) IMedia.Track.Type.Audio else IMedia.Track.Type.Text
-        val tracks = (try { player.getTracks(type) } catch (e: Exception) {
-            Log.e(TAG, "getTracks failed", e); null
-        })?.filterNotNull() ?: emptyList()
+        val tracks = (if (isAudio) player.audioTracks else player.spuTracks) ?: emptyArray()
         if (tracks.isEmpty()) { App.toast(R.string.player_no_tracks); return }
-        val currentId = try { player.getSelectedTrack(type)?.id } catch (e: Exception) { null }
-
-        val names = ArrayList<String>()
-        names.add(getString(R.string.player_track_off) + if (currentId == null) "  ✓" else "")
-        tracks.forEach { t ->
-            val label = t.name?.takeIf { it.isNotBlank() }
-                ?: t.language?.takeIf { it.isNotBlank() }
-                ?: t.codec?.takeIf { it.isNotBlank() }
-                ?: t.id
-            names.add(label + if (t.id == currentId) "  ✓" else "")
-        }
+        val current = if (isAudio) player.audioTrack else player.spuTrack
+        val names = tracks.map { it.name + if (it.id == current) "  ✓" else "" }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle(if (isAudio) R.string.player_audio else R.string.player_subs)
-            .setItems(names.toTypedArray()) { d, which ->
+            .setItems(names) { d, which ->
                 d.dismiss()
-                if (which == 0) player.unselectTrackType(type) else player.selectTrack(tracks[which - 1].id)
+                if (isAudio) player.setAudioTrack(tracks[which].id) else player.setSpuTrack(tracks[which].id)
             }
             .setOnDismissListener { bumpOsd() }
             .show()
