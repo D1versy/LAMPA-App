@@ -331,6 +331,13 @@ class PlayerActivity : BaseActivity() {
         root.setOnClickListener(null)
         root.isClickable = false
 
+        // Панель обязана съедать касания сама: LinearLayout по умолчанию их не потребляет,
+        // и тап мимо кнопки (или драг над панелью) доезжал бы до корня — то есть прятал бы
+        // OSD и мотал видео прямо под пальцем. isFocusable=false явно, чтобы не включился
+        // FOCUSABLE_AUTO (с API 26 кликабельная вью становится фокусируемой сама).
+        osdPanel.isClickable = true
+        osdPanel.isFocusable = false
+
         osdSeekBar = findViewById<SeekBar>(R.id.osdSeekBar).also { bar ->
             if (!isIPTV) {
                 osdProgress.visibility = View.GONE
