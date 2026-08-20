@@ -69,12 +69,20 @@ class PlayerActivity : BaseActivity() {
     }
 
     private data class Sub(val url: String, val label: String)
+    /** Отрезок, который плеер пропускает сам (сейчас — заставка серии jut.su), секунды. */
+    private data class Skip(val start: Double, val end: Double)
     private data class Item(
         val url: String,
         val title: String?,
         val startMs: Long,      // timeline.time*1000; 0 если percent>=96 (смотрим с начала)
         val quality: List<Pair<String, String>>,   // label → url (порядок сервера)
-        val subs: List<Sub>
+        val subs: List<Sub>,
+        // Разметка заставки: у серии, с которой начали, приходит готовой, у соседних —
+        // адресом (сервер знает их границы только после резолва страницы серии).
+        var skips: List<Skip> = emptyList(),
+        val segmentsUrl: String? = null,
+        // Пропускаем ровно один раз на серию: перемотал зритель назад — не мешаем ему.
+        var introSkipped: Boolean = false
     )
 
     private lateinit var libVLC: LibVLC
@@ -176,7 +184,13 @@ class PlayerActivity : BaseActivity() {
                         if (su.isNotEmpty()) subs.add(Sub(su, s.optString("label", "#${j + 1}")))
                     }
                 }
-                list.add(Item(url, o.optString("title", null.toString()).takeIf { it != "null" && it.isNotEmpty() }, startMs, quality, subs))
+                list.add(Item(
+                    url,
+                    o.optString("title", null.toString()).takeIf { it != "null" && it.isNotEmpty() },
+                    startMs, quality, subs,
+                    skips = parseSkips(o.optJSONObject("segments")),
+                    segmentsUrl = o.optString("segmentsUrl", "").takeIf { it.isNotEmpty() }
+                ))
             }
             if (list.isEmpty()) return false
             items = list
@@ -188,6 +202,56 @@ class PlayerActivity : BaseActivity() {
         }
     }
 
+    /** segments: {skip:[{start,end}]} — секунды, как их размечает сам сайт. */
+    private fun parseSkips(segments: JSONObject?): List<Skip> {
+        val arr = segments?.optJSONArray("skip") ?: return emptyList()
+        val out = mutableListOf<Skip>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val start = o.optDouble("start", 0.0)
+            val end = o.optDouble("end", 0.0)
+            if (end > start) out.add(Skip(start, end))
+        }
+        return out
+    }
+
+    /**
+     * Разметку соседних серий сервер знает только после резолва их страниц, поэтому элемент
+     * несёт адрес, а не готовые секунды. Тянем в фоне и НЕ ждём: не приехало — просто нет
+     * скипа, воспроизведение это задерживать не должно.
+     */
+    private fun fetchSkipsIfNeeded(item: Item) {
+        if (item.skips.isNotEmpty() || item.segmentsUrl.isNullOrEmpty()) return
+        Thread {
+            try {
+                // Как и медиа: запрос идёт мимо cookie WebView, ключ периметра нужен в URL.
+                val url = D1VAuth.sign(item.segmentsUrl) ?: item.segmentsUrl
+                val body = java.net.URL(url).openConnection().let { conn ->
+                    conn.connectTimeout = 10_000
+                    conn.readTimeout = 10_000
+                    conn.getInputStream().bufferedReader().use { it.readText() }
+                }
+                val skips = parseSkips(JSONObject(body).optJSONObject("segments"))
+                if (skips.isNotEmpty()) handler.post { item.skips = skips }
+            } catch (e: Exception) {
+                Log.i(TAG, "segments fetch failed: ${e.message}")
+            }
+        }.start()
+    }
+
+    /**
+     * Автопропуск заставки: попали в размеченный отрезок — перематываем на его конец.
+     * Ровно один раз на серию, чтобы ручная перемотка назад не воевала со скипом.
+     */
+    private fun skipIntroIfNeeded(positionMs: Long) {
+        val item = items.getOrNull(index) ?: return
+        if (item.introSkipped || item.skips.isEmpty()) return
+        val pos = positionMs / 1000.0
+        val seg = item.skips.firstOrNull { pos >= it.start && pos < it.end - 1 } ?: return
+        item.introSkipped = true
+        player.time = (seg.end * 1000).toLong()
+    }
+
     // ─────────────────────────── воспроизведение ───────────────────────────
 
     private fun playItem(i: Int) {
@@ -197,6 +261,8 @@ class PlayerActivity : BaseActivity() {
         val signed = D1VAuth.sign(rawUrl) ?: rawUrl
         pendingSeekMs = if (item.startMs > 0) item.startMs else -1
         slavesAdded = false
+        item.introSkipped = false
+        fetchSkipsIfNeeded(item)
         lastPosMs = 0; lastDurMs = 0
 
         Log.i(TAG, "playItem[$index] ${item.title ?: ""} seek=${pendingSeekMs}ms")
@@ -241,7 +307,7 @@ class PlayerActivity : BaseActivity() {
 
             MediaPlayer.Event.TimeChanged -> {
                 if (player.time > 0) lastPosMs = player.time
-                handler.post { updateProgressUi() }
+                handler.post { skipIntroIfNeeded(lastPosMs); updateProgressUi() }
             }
 
             MediaPlayer.Event.LengthChanged -> {

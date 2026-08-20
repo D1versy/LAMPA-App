@@ -90,6 +90,8 @@ class PlayerStateManager(context: Context) {
      * @property quality Available quality variants
      * @property subtitles Available subtitle tracks
      * @property segments Raw skip/ad segments JSON (as received from Lampa)
+     * @property segmentsUrl Where to fetch the segments from (jut.su: the server only knows
+     *   the intro bounds of an episode after resolving its page, so neighbours carry a URL)
      * @property season Season number, if the item is a TV episode (may be absent)
      * @property episode Episode number, if the item is a TV episode (may be absent)
      * @property imdbId IMDb id from the card (may be absent)
@@ -102,6 +104,7 @@ class PlayerStateManager(context: Context) {
         val quality: Map<String, String>? = null,
         val subtitles: List<Subtitle>? = null,
         val segments: String? = null,
+        val segmentsUrl: String? = null,
         val season: Int? = null,
         val episode: Int? = null,
         val imdbId: String? = null
@@ -346,6 +349,11 @@ class PlayerStateManager(context: Context) {
                         item.quality?.let { quality ->
                             put("quality", JSONObject(quality))
                         }
+                        // 🔥 Разметка обязана переживать сериализацию: state — единственный
+                        // канал до PlayerActivity, и без этих двух полей автопропуск
+                        // заставки (jut.su) до плеера не доезжал вовсе.
+                        item.segments?.let { put("segments", JSONObject(it)) }
+                        item.segmentsUrl?.let { put("segmentsUrl", it) }
                         item.subtitles?.let { subs ->
                             put("subtitles", JSONArray().apply {
                                 subs.forEach { sub ->
@@ -716,6 +724,7 @@ class PlayerStateManager(context: Context) {
             quality = optJSONObject("quality")?.toQualityMap(),
             subtitles = optJSONArray("subtitles")?.toSubtitles(),
             segments = optJSONObject("segments")?.toString(),
+            segmentsUrl = optString("segmentsUrl").takeIf { it.isNotEmpty() },
 
             // Optional TV episode info — absent for movies / single files.
             season = if (has("season") && !isNull("season")) optInt("season") else null,
