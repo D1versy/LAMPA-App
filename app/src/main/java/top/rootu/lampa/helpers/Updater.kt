@@ -91,7 +91,16 @@ object Updater {
         lastCheckAt = SystemClock.elapsedRealtime()
         try {
             val ctx = App.context
-            val host = HostResolver.resolve(ctx)   // живой хост (LAN → tv → tv2)
+            // qdl 2.53: сперва берём победителя уже прошедшей гонки. Раньше здесь всегда был
+            // полный resolve(), и холодный старт устраивал до ТРЁХ гонок вместо одной: эта,
+            // такая же из MainActivity.checkUpdateOnStart и та единственная нужная, что
+            // гейтит загрузку страницы в onBrowserInitCompleted.
+            // 🔴 Заодно чинится латентный баг: resolve() первой строкой зовёт resetFailover(),
+            // и OTA-проверка, попавшая в момент перебора хостов после ошибки загрузки
+            // (SysView → nextHost), сбрасывала очередь перебора на начало — тот шёл по кругу.
+            // Фолбек на полную гонку остаётся: фоновая проверка может случиться и до первого
+            // резолва (headless-подъём по ContentJobService), и много позже него.
+            val host = HostResolver.cachedLiveHost() ?: HostResolver.resolve(ctx)
             if (host.isEmpty()) return false
 
             val request = Request.Builder()

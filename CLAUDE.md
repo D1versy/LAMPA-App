@@ -42,7 +42,7 @@
 
 Приложение обновляет **само себя** по воздуху с нашего сервера — без ручной переустановки.
 
-- `helpers/Updater.kt` тянет манифест на живом хосте (`HostResolver.resolve` → LAN/tv/tv2): `GET /d1vision/apps/android/manifest.json` (`{versionCode,versionName,file,notes}`), сравнивает по числовому **`versionCode`** (прежняя хрупкая tag_name/Double-логика убрана), качает APK с того же хоста, ставит через системный установщик (FileProvider — `.update_provider`). Адрес сервера Updater не трогает.
+- `helpers/Updater.kt` тянет манифест на живом хосте (`HostResolver.cachedLiveHost()`, фолбек — полный `resolve()` → LAN/tv/tv2): `GET /d1vision/apps/android/manifest.json` (`{versionCode,versionName,file,notes}`), сравнивает по числовому **`versionCode`** (прежняя хрупкая tag_name/Double-логика убрана), качает APK с того же хоста, ставит через системный установщик (FileProvider — `.update_provider`). Адрес сервера Updater не трогает.
 - `versionCode` растёт из `git rev-list --count origin/main` → **OTA-коммит должен быть запушен в origin/main ДО сборки** нового билда (иначе версия не вырастет).
 - Первый OTA-переход требует один раз разрешить «Установка неизвестных приложений» для D1Vision (системный тумблер) → дальше: обнаружил → скачал → «Обновить?» → один тап. Проверено сквозным тестом на живом ТВ (555→556).
 - Билды публикует сервер из папки `client-builds/android/` (репо медиасервера); публикация — `E:\Media-server\scripts\publish-android-build.ps1`. Канон — `E:\Media-server\claude\08-clients.md` → «Самообновление бинарей».
@@ -277,6 +277,21 @@ adb shell am start -n top.rootu.lampa/.MainActivity --es cmd open_settings
 ## Гочи
 - Стартовый адрес — **дефолт**, а не жёсткая привязка. Если приложение уже запускалось со старым URL, он лежит в SharedPreferences (`settings/url`) и перебивает дефолт → очистить данные приложения или сменить сервер через adb-интент `cmd open_settings` (см. раздел выше).
 - Порядок хостов **совпадает** с Apple-клиентами (LAN primary → tv → tv2 → OTA) — расхождений нет. Домен `tv.d1versy.com` **изнутри дома не отвечает** (нет hairpin NAT на роутере), поэтому LAN и остаётся первым: домен-primary дал бы 2.5 с ожидания на каждом домашнем старте. Проверить, кто выиграл гонку: `adb logcat -s HostResolver`.
+
+🔴 **Гонка на холодном старте должна быть ОДНА** (qdl 2.53). До этого их было до трёх: `resolve()`
+звали `App.checkForUpdates`, `MainActivity.checkUpdateOnStart` и `onBrowserInitCompleted` — и
+только последняя действительно нужна (она гейтит загрузку страницы), а две первых ещё и отбирали
+канал у загружающейся Лампы. Теперь:
+- `HostResolver.cachedLiveHost(maxAgeMs = 10 мин)` — победитель прошлой гонки для ФОНОВЫХ задач;
+  пишется в `resolve()`/`resolveLiveOrNull()`. Эталон — `win-app/D1Vision/Core/HostResolver.cs`.
+- `App.checkForUpdates` ждёт появления победителя до 20 с (`RESOLVE_WAIT_SEC`), и только потом
+  идёт своим путём — на headless-подъёме, где страница не грузится, поведение прежнее.
+- 🔴 Саму гонку не трогать: пробы и так параллельны, grace 300 мс держит приоритет, проигравшие
+  отменяются. Правило: **путь загрузки страницы = полный резолв, фон = кеш победителя.**
+- Побочно закрыт латентный баг: `resolve()` первой строкой зовёт `resetFailover()`, и
+  OTA-проверка, попавшая в момент перебора хостов после ошибки загрузки (`SysView` → `nextHost`),
+  сбрасывала очередь перебора на начало — перебор шёл по кругу. Проверять `adb logcat`: на
+  холодном старте должна быть РОВНО ОДНА строка `resolve:`.
 - Меняется/добавляется адрес сервера — либо `clientHosts` в `init.conf` сервера (OTA, без пересборки), либо bootstrap `fallbackHosts` в [app/build.gradle](app/build.gradle) + пересборка. См. раздел «Фолбек хостов и OTA».
 - Полная база знаний — [claude/README.md](claude/README.md).
 

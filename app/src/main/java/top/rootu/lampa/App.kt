@@ -16,6 +16,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.rootu.lampa.helpers.Helpers.isConnected
+import top.rootu.lampa.helpers.HostResolver
 import top.rootu.lampa.helpers.Prefs.appLang
 import top.rootu.lampa.helpers.Prefs.appUrl
 import top.rootu.lampa.helpers.Updater
@@ -37,6 +38,10 @@ class App : MultiDexApplication() {
 
         // Сколько секунд ждём появления foreground, отличая пользовательский старт от фонового
         private const val FOREGROUND_WAIT_SEC = 60
+
+        // Сколько ждать победителя гонки хостов от загрузки страницы, прежде чем
+        // фоновая проверка обновлений проведёт свою (см. checkForUpdates)
+        private const val RESOLVE_WAIT_SEC = 20
 
         private lateinit var appContext: Context
 
@@ -160,6 +165,18 @@ class App : MultiDexApplication() {
         try {
             while (!isConnected(appContext) && count > 0) {
                 delay(1000) // wait for network
+                count--
+            }
+
+            // qdl 2.53: не устраиваем СВОЮ гонку хостов, если её вот-вот проведёт загрузка
+            // страницы. Ждём появления победителя не дольше [RESOLVE_WAIT_SEC]; не дождались
+            // (headless-подъём, страница не грузится) — Updater.check() сам сходит в гонку,
+            // как раньше. Без этого холодный старт устраивал до трёх гонок вместо одной,
+            // и лишние две отбирали канал у загружающейся Лампы.
+            var wait = RESOLVE_WAIT_SEC
+            while (HostResolver.cachedLiveHost() == null && wait > 0 && count > 0) {
+                delay(1000)
+                wait--
                 count--
             }
 

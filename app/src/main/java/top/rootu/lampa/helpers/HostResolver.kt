@@ -1,6 +1,7 @@
 package top.rootu.lampa.helpers
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
@@ -61,6 +62,35 @@ object HostResolver {
 
     // Очередь перебора хостов при ошибке загрузки (null — перебор не начат)
     private var failoverQueue: MutableList<String>? = null
+
+    // qdl 2.53: последний живой победитель гонки. Заводится РАДИ ФОНОВЫХ потребителей
+    // (проверка обновлений): холодный старт устраивал до ТРЁХ полных гонок вместо одной —
+    // App.checkForUpdates, MainActivity.checkUpdateOnStart и onBrowserInitCompleted, и каждая
+    // платила свои 2.5 с таймаута на мёртвых кандидатах. Саму гонку не трогаем: приоритеты,
+    // параллельность проб и grace — как были, просто победителя теперь запоминаем.
+    // Эталон — win-app/D1Vision/Core/HostResolver.cs (LastLiveHost), там это уже работает.
+    @Volatile
+    private var lastLiveHost: String? = null
+
+    @Volatile
+    private var lastLiveAt: Long = 0L
+
+    private fun rememberLive(host: String?) {
+        if (host.isNullOrEmpty()) return
+        lastLiveHost = host
+        lastLiveAt = SystemClock.elapsedRealtime()
+    }
+
+    /**
+     * Победитель предыдущей гонки, если он свежее [maxAgeMs]; иначе null.
+     * Для ФОНОВЫХ задач, которым нужен «какой-нибудь живой хост», а не свежий резолв.
+     * 🔴 Не звать из пути загрузки страницы: там нужен именно резолв, иначе после переезда
+     * сервера клиент залипнет на старом победителе.
+     */
+    fun cachedLiveHost(maxAgeMs: Long = 10 * 60 * 1000L): String? {
+        val host = lastLiveHost ?: return null
+        return if (SystemClock.elapsedRealtime() - lastLiveAt <= maxAgeMs) host else null
+    }
 
     // Один клиент на все пробы: у каждого OkHttpClient свой dispatcher-поток (enqueue),
     // клиент-на-пробу копил бы idle-потоки в 5-секундном цикле реконнекта.
@@ -240,6 +270,7 @@ object HostResolver {
         val winner = runBlocking {
             withTimeoutOrNull(RACE_HARD_TIMEOUT_MS) { raceLive(candidates, protectedCount(context)) }
         }
+        rememberLive(winner)
         val result = winner ?: candidates.firstOrNull() ?: normalize(context.appUrl)
         // Диагностика фолбека: по итоговому LAMPA_URL не видно, кто участвовал и кто отвалился.
         // Смотреть `adb logcat -s HostResolver` — дома ожидаем победу LAN, вне дома tv.d1versy.com.
@@ -260,7 +291,7 @@ object HostResolver {
     fun resolveLiveOrNull(context: Context): String? = runBlocking {
         withTimeoutOrNull(RACE_HARD_TIMEOUT_MS) {
             raceLive(buildCandidates(context), protectedCount(context))
-        }
+        }?.also { rememberLive(it) }
     }
 
     /**
