@@ -173,11 +173,14 @@ class App : MultiDexApplication() {
             // (headless-подъём, страница не грузится) — Updater.check() сам сходит в гонку,
             // как раньше. Без этого холодный старт устраивал до трёх гонок вместо одной,
             // и лишние две отбирали канал у загружающейся Лампы.
+            // 🔴 СВОЙ счётчик, count не трогаем. Он общий бюджет «ждём сеть + ждём foreground»,
+            // и если тратить его здесь, то при поздно появившейся сети (например, на 45-й секунде)
+            // ожидание съело бы остаток и Updater.check() не выполнился бы вовсе — проверка
+            // обновлений молча пропала бы за весь запуск процесса.
             var wait = RESOLVE_WAIT_SEC
-            while (HostResolver.cachedLiveHost() == null && wait > 0 && count > 0) {
+            while (HostResolver.cachedLiveHost() == null && wait > 0) {
                 delay(1000)
                 wait--
-                count--
             }
 
             if (count > 0 && Updater.check()) {
