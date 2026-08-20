@@ -161,7 +161,8 @@ android {
         //   • свой OTA-канал → телефон обновляется телефонным APK;
         //   • phoneBuild=true → включает телефонные ветки в общем коде;
         //   • оверлей app/src/phone/ → ориентация, иконка, имя, без ТВ-компонентов.
-        // Разделы «D1versy Live» и «D1versy Rec» тут залочены (helpers/PhoneLock.kt).
+        // Разделы «D1versy Live» / «D1versy Rec» с qdl 2.54 гейтит СЕРВЕР по айди устройства
+        // (форк, Perms.cs; выдача прав — админка /admin/d1v). Клиентского лока здесь больше нет.
         // Crosswalk — как в lite (shared library), см. phoneApi в dependencies.
         phone {
             applicationIdSuffix ".phone"

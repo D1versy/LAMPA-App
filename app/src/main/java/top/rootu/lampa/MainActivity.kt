@@ -461,9 +461,10 @@ class MainActivity : BaseActivity(),
         if (view.visibility != View.VISIBLE) {
             view.visibility = View.VISIBLE
         }
-        // D1Vision: телефонная сборка — прячем «D1versy Live» и «D1versy Rec».
+        // D1Vision: телефонные правки веб-UI (нижняя панель, пункты «Загрузок», язык).
         // Как можно раньше и на каждую загрузку страницы: сниппет идемпотентный,
-        // а CSS должен лечь до отрисовки меню, иначе пункты мигнут. См. PhoneLock.
+        // а CSS должен лечь до отрисовки, иначе пункты мигнут. См. PhoneLock.
+        // Разделы D1versy Live/Rec здесь больше не прячутся — их выдаёт сервер по айди устройства.
         if (BuildConfig.phoneBuild) {
             browser?.evaluateJavascript(PhoneLock.JS) { }
         }
