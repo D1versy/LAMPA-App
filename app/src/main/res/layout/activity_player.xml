@@ -13,6 +13,23 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- D1Vision: статус поверх видео вместо чёрного экрана (паритет win 1.0.3 / mac-iOS 1.0.6):
+         «Загрузка…» до первого кадра и «Не удалось воспроизвести» при ошибке. НЕ фокусируемый и
+         не кликабельный — иначе на ТВ попадёт в фокус-навигацию пульта, а на телефоне перехватит
+         тап. Лежит ДО osdPanel: панель снизу должна рисоваться поверх. -->
+    <TextView
+        android:id="@+id/playerStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="#C0000000"
+        android:padding="16dp"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
+        android:focusable="false"
+        android:clickable="false"
+        android:visibility="gone" />
+
     <LinearLayout
         android:id="@+id/osdPanel"
         android:layout_width="match_parent"

@@ -33,6 +33,8 @@
     <string name="player_quality">Качество</string>
     <string name="player_no_tracks">Дорожек нет</string>
     <string name="player_error">Ошибка воспроизведения</string>
+    <string name="player_loading">Загрузка…</string>
+    <string name="player_failed">Не удалось воспроизвести</string>
     <string name="input_url_title">Укажите адрес Lampa</string>
     <string name="select_player">Выбор плеера</string>
     <string name="select_player_reset">Выбранный плеер сброшен</string>

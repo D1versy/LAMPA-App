@@ -35,6 +35,8 @@
     <string name="player_quality">Quality</string>
     <string name="player_no_tracks">No tracks available</string>
     <string name="player_error">Playback error</string>
+    <string name="player_loading">Loading…</string>
+    <string name="player_failed">Playback failed</string>
     <string name="input_url_title">Please enter Lampa URL</string>
     <string name="select_player">Player selection</string>
     <string name="select_player_reset">The selected player has been reset</string>

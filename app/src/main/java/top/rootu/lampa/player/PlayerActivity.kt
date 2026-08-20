@@ -15,6 +15,7 @@ import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.SeekBar
 import android.widget.TextView
+import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
 import org.json.JSONObject
 import kotlin.math.abs
@@ -86,6 +87,7 @@ class PlayerActivity : BaseActivity() {
     private lateinit var osdTimeDur: TextView
     private lateinit var osdProgress: ProgressBar
     private lateinit var btnPlayPause: Button
+    private lateinit var playerStatus: TextView
 
     // Тач-управление — только в телефонной сборке; на ТВ всё остаётся ровно как было.
     private var osdSeekBar: SeekBar? = null
@@ -125,6 +127,7 @@ class PlayerActivity : BaseActivity() {
         osdTimeDur = findViewById(R.id.osdTimeDur)
         osdProgress = findViewById(R.id.osdProgress)
         btnPlayPause = findViewById(R.id.btnPlayPause)
+        playerStatus = findViewById(R.id.playerStatus)
 
         isIPTV = intent.getBooleanExtra(EXTRA_IPTV, false)
         fallbackTitle = intent.getStringExtra(EXTRA_TITLE) ?: ""
@@ -202,6 +205,7 @@ class PlayerActivity : BaseActivity() {
         player.media = media
         media.release()
         player.play()
+        showStatus(R.string.player_loading)   // снимется первым Event.Playing
 
         osdTitle.text = item.title ?: fallbackTitle
         updatePlayPauseLabel()
@@ -232,7 +236,7 @@ class PlayerActivity : BaseActivity() {
                         }
                     }
                 }
-                handler.post { updatePlayPauseLabel() }
+                handler.post { hideStatus(); updatePlayPauseLabel() }
             }
 
             MediaPlayer.Event.TimeChanged -> {
@@ -249,8 +253,10 @@ class PlayerActivity : BaseActivity() {
 
             MediaPlayer.Event.EncounteredError -> handler.post {
                 Log.e(TAG, "EncounteredError on ${items[index].url}")
-                App.toast(R.string.player_error)
-                finishWithResult(false)
+                // Плеер НЕ закрываем сам: показываем плашку и ждём BACK (он идёт в
+                // finishWithResult(false), прогресс вернётся в Lampa). Паритет с win/mac/iOS —
+                // раньше был уезжающий тост поверх чёрного экрана и мгновенный выход.
+                showStatus(R.string.player_failed)
             }
         }
     }
@@ -441,6 +447,20 @@ class PlayerActivity : BaseActivity() {
     private fun osdVisible() = osdPanel.visibility == View.VISIBLE
 
     /**
+     * Плашка поверх видео вместо чёрного экрана: «Загрузка…» до первого кадра и
+     * «Не удалось воспроизвести» при ошибке (паритет с win 1.0.3 и mac/iOS 1.0.6).
+     * Живёт отдельно от OSD: автоскрытия у неё нет — снимает её только реальный старт.
+     */
+    private fun showStatus(@StringRes id: Int) {
+        playerStatus.setText(id)
+        playerStatus.visibility = View.VISIBLE
+    }
+
+    private fun hideStatus() {
+        playerStatus.visibility = View.GONE
+    }
+
+    /**
      * Панель в ИНТЕРАКТИВНОМ режиме: фокус на кнопках, стрелки ходят по ним.
      * Отличать от showOsdProgressOnly() (панель как индикатор при перемотке) —
      * решает dispatchKeyEvent: НЕЛЬЗЯ судить по видимости панели. Баг билда 568:
@@ -521,8 +541,7 @@ class PlayerActivity : BaseActivity() {
     private fun showOsdProgressOnly() {
         osdPanel.visibility = View.VISIBLE
         updateProgressUi()
-        handler.removeCallbacks(hideOsdRunnable)
-        handler.postDelayed(hideOsdRunnable, OSD_HIDE_MS)
+        bumpOsd()   // через bumpOsd, а не напрямую: на паузе таймер не ставится вовсе
     }
 
     /**
