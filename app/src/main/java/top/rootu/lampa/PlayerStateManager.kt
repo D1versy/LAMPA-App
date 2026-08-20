@@ -808,6 +808,12 @@ class PlayerStateManager(context: Context) {
             season?.let { put("season", it) }
             episode?.let { put("episode", it) }
             imdbId?.let { put("imdb_id", it) }
+            // 🔥 Разметка заставки обязана переживать SharedPreferences. Асимметрия «читаем, но
+            // не пишем» стоила бы скипа в сценарии «Продолжить просмотр»: после перезапуска
+            // процесса stateCache пуст, состояние поднимается loadPersistedState — и элементы
+            // приходили бы без segments И без segmentsUrl, то есть без адреса, чтобы их дотянуть.
+            segments?.let { put("segments", JSONObject(it)) }
+            segmentsUrl?.let { put("segmentsUrl", it) }
         }
     }
 
