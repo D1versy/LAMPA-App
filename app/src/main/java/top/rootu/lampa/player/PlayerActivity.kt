@@ -63,6 +63,14 @@ class PlayerActivity : BaseActivity() {
         private const val OSD_HIDE_MS = 4000L
         private const val ENDED_PERCENT = 96      // как VIDEO_COMPLETED_DURATION_MAX_PERCENTAGE
         private const val SEEK_BASE_MS = 10_000L
+        // Сколько ждём тишины, прежде чем отдать накопленную перемотку в плеер. Меньше — серия
+        // нажатий снова превращается в серию сетевых seek-ов; больше — пульт начинает «залипать».
+        private const val SEEK_COMMIT_MS = 450L
+        // Насколько близко к цели считается «доехали». Ремукс режет на ключевых кадрах (hls_time 6),
+        // поэтому seek законно встаёт в стороне — окно чуть шире одного сегмента.
+        private const val SEEK_SETTLE_MS = 8_000L
+        // Страховка: если seek так и не доехал (обрыв, битый сегмент), тики нельзя глушить вечно.
+        private const val SEEK_SETTLE_TIMEOUT_MS = 8_000L
         // Тач-скраб: протащить палец через ВСЮ ширину экрана = столько перемотки.
         // 120 с — компромисс: и по минуте отлистать, и секунду поймать не невозможно.
         private const val SCRUB_FULL_MS = 120_000f
@@ -122,6 +130,28 @@ class PlayerActivity : BaseActivity() {
     // акселерация перемотки: подряд идущие нажатия наращивают шаг 10с → 30с → 60с
     private var seekStreak = 0
     private var lastSeekAt = 0L
+
+    // Куда зритель мотает прямо сейчас (-1 — никуда). Нажатия копятся ЗДЕСЬ, а в плеер уходит
+    // одна перемотка после паузы: по HLS каждый seek — это сетевой запрос сегмента, и серия из
+    // пяти нажатий раньше давала пять перемоток, четыре из которых только тормозили.
+    private var seekWantMs = -1L
+
+    // Цель уже отданной перемотки: пока она не доехала, тики TimeChanged игнорируются.
+    // 🔴 Ради этого всё и затевалось: сетевой seek длится секунды, и всё это время player.time
+    // отдаёт СТАРУЮ позицию. Она затирала lastPosMs, следующее нажатие считалось от неё —
+    // и уехать дальше одного шага было нельзя. Ровно то, на что жаловался владелец
+    // («перематывается только по 10 сек, больше — не срабатывает»).
+    private var seekTargetMs = -1L
+    private var seekTargetAt = 0L
+
+    /** Отдать накопленную перемотку в плеер. */
+    private val seekCommit = Runnable {
+        val t = seekWantMs
+        if (t >= 0) {
+            seekWantMs = -1
+            applySeek(t)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -249,7 +279,7 @@ class PlayerActivity : BaseActivity() {
         val pos = positionMs / 1000.0
         val seg = item.skips.firstOrNull { pos >= it.start && pos < it.end - 1 } ?: return
         item.introSkipped = true
-        player.time = (seg.end * 1000).toLong()
+        applySeek((seg.end * 1000).toLong())
     }
 
     // ─────────────────────────── воспроизведение ───────────────────────────
@@ -264,6 +294,9 @@ class PlayerActivity : BaseActivity() {
         item.introSkipped = false
         fetchSkipsIfNeeded(item)
         lastPosMs = 0; lastDurMs = 0
+        // Новая серия — накопленная и незакрытая перемотки прежней к ней не относятся.
+        handler.removeCallbacks(seekCommit)
+        seekWantMs = -1; seekTargetMs = -1; seekStreak = 0
 
         Log.i(TAG, "playItem[$index] ${item.title ?: ""} seek=${pendingSeekMs}ms")
         val media = Media(libVLC, Uri.parse(signed))
@@ -288,7 +321,7 @@ class PlayerActivity : BaseActivity() {
             MediaPlayer.Event.Playing -> {
                 // seek только ПОСЛЕ реального старта (грабля libVLC, зафиксирована на маке)
                 if (pendingSeekMs > 0) {
-                    player.time = pendingSeekMs
+                    applySeek(pendingSeekMs)
                     pendingSeekMs = -1
                 }
                 if (!slavesAdded) {
@@ -306,7 +339,15 @@ class PlayerActivity : BaseActivity() {
             }
 
             MediaPlayer.Event.TimeChanged -> {
-                if (player.time > 0) lastPosMs = player.time
+                val t = player.time
+                // Перемотка ещё в полёте — этот тик из прошлого, ему верить нельзя (см. seekTargetMs).
+                if (seekTargetMs >= 0) {
+                    val arrived = abs(t - seekTargetMs) <= SEEK_SETTLE_MS
+                    val gaveUp = System.currentTimeMillis() - seekTargetAt > SEEK_SETTLE_TIMEOUT_MS
+                    if (!arrived && !gaveUp) return
+                    seekTargetMs = -1
+                }
+                if (t > 0) lastPosMs = t
                 handler.post { skipIntroIfNeeded(lastPosMs); updateProgressUi() }
             }
 
@@ -342,6 +383,9 @@ class PlayerActivity : BaseActivity() {
      * элемента (не подписанный, не quality-вариант — хотя матчер понимает и его).
      */
     private fun finishWithResult(ended: Boolean) {
+        // Накопленную перемотку добивать некуда — уходим. lastPosMs её уже держит, так что
+        // в Lampa вернётся именно то, куда зритель домотал.
+        handler.removeCallbacks(seekCommit)
         val cur = items.getOrNull(index)
         val out = Intent()
         if (cur != null) out.data = Uri.parse(cur.url)
@@ -505,9 +549,20 @@ class PlayerActivity : BaseActivity() {
     private fun seekTo(ms: Long) {
         val dur = lastDurMs
         val target = if (dur > 0) ms.coerceIn(0L, dur - 1000) else ms.coerceAtLeast(0L)
+        // Жест самодостаточен — копить нечего, но накопленное клавишами гасим, иначе оно доедет
+        // следом и утащит зрителя обратно.
+        handler.removeCallbacks(seekCommit)
+        seekWantMs = -1
+        applySeek(target)
+        updateProgressUi()
+    }
+
+    /** Записать перемотку в плеер и не верить тикам, пока она не доедет. */
+    private fun applySeek(target: Long) {
         player.time = target
         lastPosMs = target   // мгновенный отклик: player.time после записи отдаёт старое значение
-        updateProgressUi()
+        seekTargetMs = target
+        seekTargetAt = System.currentTimeMillis()
     }
 
     private fun osdVisible() = osdPanel.visibility == View.VISIBLE
@@ -592,15 +647,24 @@ class PlayerActivity : BaseActivity() {
             else -> SEEK_BASE_MS
         }
         val dur = lastDurMs
-        // считаем от lastPosMs, не от player.time: seek в libVLC асинхронный, чтение
-        // player.time сразу после записи возвращает СТАРОЕ значение — серия нажатий
-        // мотала бы от одной и той же точки
-        val base = if (lastPosMs > 0) lastPosMs else player.time
+        // Считаем от НАКОПЛЕННОЙ цели, а не от player.time: seek в libVLC асинхронный (по HLS —
+        // секунды), чтение player.time сразу после записи возвращает СТАРОЕ значение, и серия
+        // нажатий мотала бы от одной и той же точки.
+        val base = when {
+            seekWantMs >= 0 -> seekWantMs
+            lastPosMs > 0 -> lastPosMs
+            else -> player.time
+        }
         var target = (base + deltaSign * step).coerceAtLeast(0)
         if (dur > 0) target = target.coerceAtMost(dur - 1000)
-        player.time = target
-        lastPosMs = target   // мгновенный отклик прогресс-бара
+
+        seekWantMs = target
+        lastPosMs = target   // мгновенный отклик прогресс-бара: цифры бегут по нажатиям, а не по сети
         showOsdProgressOnly()
+
+        // В плеер уходит одна перемотка, когда зритель домотал (см. SEEK_COMMIT_MS).
+        handler.removeCallbacks(seekCommit)
+        handler.postDelayed(seekCommit, SEEK_COMMIT_MS)
     }
 
     /** при перемотке панель — только индикатор: НЕ интерактивная, фокус не воруем */
