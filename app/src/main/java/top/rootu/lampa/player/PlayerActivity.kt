@@ -74,6 +74,19 @@ class PlayerActivity : BaseActivity() {
         // Тач-скраб: протащить палец через ВСЮ ширину экрана = столько перемотки.
         // 120 с — компромисс: и по минуте отлистать, и секунду поймать не невозможно.
         private const val SCRUB_FULL_MS = 120_000f
+
+        // ── Восстановление потока (паритет с win 1.0.7 / mac 1.0.11) ──
+        // Файл из «Загрузок» едет ОДНИМ бесконечным HTTP-ответом. На паузе libVLC перестаёт
+        // вычитывать тело, и соединение стоит полностью немым — за десятки минут такой сокет
+        // молча умирает (doze, смена сети, NAT): ни FIN, ни RST, читатель виснет навсегда.
+        // Поэтому мёртвый поток просто не держим: долгая пауза отпускает его, а watchdog ловит
+        // зависший и переоткрывает с той же секунды.
+        private const val PAUSE_DETACH_MS = 120_000L
+        private const val STALL_TIMEOUT_MS = 15_000L
+        private const val REOPEN_MAX_ATTEMPTS = 3
+        // EndReached ниже этого процента — это обрыв, а не конец фильма.
+        private const val PREMATURE_END_PERCENT = 95
+        private val REOPEN_BACKOFF_MS = longArrayOf(1_000L, 3_000L, 6_000L)
     }
 
     private data class Sub(val url: String, val label: String)
@@ -143,6 +156,22 @@ class PlayerActivity : BaseActivity() {
     // («перематывается только по 10 сек, больше — не срабатывает»).
     private var seekTargetMs = -1L
     private var seekTargetAt = 0L
+
+    // Восстановление потока (см. константы выше)
+    private var progressAt = 0L      // когда позиция РЕАЛЬНО двигалась в последний раз
+    private var pausedAt = 0L        // когда ушли на паузу (0 — не на паузе)
+    private var sawPlaying = false   // до первого Playing сталл не считаем (холодный старт HLS)
+    private var detached = false     // поток отпущен: медиа нет, правда о позиции в lastPosMs
+    private var reopening = false
+    private var reopenAttempt = 0
+
+    /** Раз в секунду; тикает и когда активность в фоне — главный лупер живёт вместе с процессом. */
+    private val watchdog = object : Runnable {
+        override fun run() {
+            watchdogTick()
+            handler.postDelayed(this, 1000)
+        }
+    }
 
     /** Отдать накопленную перемотку в плеер. */
     private val seekCommit = Runnable {
@@ -306,6 +335,11 @@ class PlayerActivity : BaseActivity() {
         player.play()
         showStatus(R.string.player_loading)   // снимется первым Event.Playing
 
+        detached = false; reopening = false; pausedAt = 0; sawPlaying = false
+        progressAt = System.currentTimeMillis()
+        handler.removeCallbacks(watchdog)
+        handler.postDelayed(watchdog, 1000)
+
         osdTitle.text = item.title ?: fallbackTitle
         updatePlayPauseLabel()
         updateProgressUi()
@@ -335,8 +369,20 @@ class PlayerActivity : BaseActivity() {
                         }
                     }
                 }
+                sawPlaying = true
+                pausedAt = 0
+                progressAt = System.currentTimeMillis()
                 handler.post { hideStatus(); updatePlayPauseLabel() }
             }
+
+            MediaPlayer.Event.Paused -> {
+                pausedAt = System.currentTimeMillis()
+                handler.post { updatePlayPauseLabel() }
+            }
+
+            // Буферизация — «поток жив, но позиция стоит»: сталл-таймер сбрасываем, иначе долгий
+            // прогрев (склейка суток в D1versy Rec доезжает десятками секунд) читался бы как обрыв.
+            MediaPlayer.Event.Buffering -> progressAt = System.currentTimeMillis()
 
             MediaPlayer.Event.TimeChanged -> {
                 val t = player.time
@@ -348,6 +394,9 @@ class PlayerActivity : BaseActivity() {
                     seekTargetMs = -1
                 }
                 if (t > 0) lastPosMs = t
+                sawPlaying = true
+                progressAt = System.currentTimeMillis()   // поток жив — сталл-таймер с нуля
+                reopenAttempt = 0                          // доехали до реального прогресса
                 handler.post { skipIntroIfNeeded(lastPosMs); updateProgressUi() }
             }
 
@@ -360,6 +409,9 @@ class PlayerActivity : BaseActivity() {
 
             MediaPlayer.Event.EncounteredError -> handler.post {
                 Log.e(TAG, "EncounteredError on ${items[index].url}")
+                // Чаще это обрыв потока, а не мёртвая ссылка — сперва пробуем вернуться на ту же
+                // секунду; когда попытки кончатся, reopen сам покажет плашку.
+                if (lastPosMs > 1000) { reopen("error"); return@post }
                 // Плеер НЕ закрываем сам: показываем плашку и ждём BACK (он идёт в
                 // finishWithResult(false), прогресс вернётся в Lampa). Паритет с win/mac/iOS —
                 // раньше был уезжающий тост поверх чёрного экрана и мгновенный выход.
@@ -369,6 +421,15 @@ class PlayerActivity : BaseActivity() {
     }
 
     private fun onEndReached() {
+        // 🔴 Обрыв сетевого потока приходит демуксеру как обычный конец файла. До этого фикса
+        // любой обрыв уходил в Lampa как «досмотрено» (RESULT_FIRST_USER) на середине фильма.
+        // Гард только при известной длительности: у Live/Rec length = 0 штатно.
+        val dur = lastDurMs
+        if (dur > 0 && lastPosMs < dur * PREMATURE_END_PERCENT / 100) {
+            Log.w(TAG, "premature-end pos=$lastPosMs dur=$dur")
+            reopen("premature-end")
+            return
+        }
         // авто-next: гейт playlist_next уже применён при сборке state (runPlayer кладёт
         // плейлист только при playerAutoNext); live не листаем
         if (!isIPTV && index + 1 < items.size) {
@@ -376,6 +437,66 @@ class PlayerActivity : BaseActivity() {
         } else {
             finishWithResult(true)
         }
+    }
+
+    // ─────────────────────── watchdog и восстановление потока ───────────────────────
+
+    private fun watchdogTick() {
+        if (reopening) return
+        val now = System.currentTimeMillis()
+
+        if (pausedAt > 0 && !detached && now - pausedAt > PAUSE_DETACH_MS) {
+            detachForPause()
+            return
+        }
+        if (detached || pausedAt > 0) return
+        if (!sawPlaying) return
+        if (seekWantMs >= 0 || seekTargetMs >= 0) return   // перемотка в полёте — тики глушатся штатно
+        if (now - progressAt > STALL_TIMEOUT_MS) reopen("stall")
+    }
+
+    /** Долгая пауза: отпустить сетевой поток, запомнив позицию. Цена — вместо застывшего кадра
+     *  плашка; выгода — к возвращению зрителя нет мёртвого сокета, на котором плеер виснет. */
+    private fun detachForPause() {
+        detached = true
+        pausedAt = 0
+        try { player.stop() } catch (_: Exception) {}
+        Log.i(TAG, "detach: paused>${PAUSE_DETACH_MS}ms pos=$lastPosMs")
+        showStatus(R.string.player_paused_detached)
+        showOsd()
+    }
+
+    /** Переоткрыть текущий элемент с последней известной секунды.
+     *  reason=="resume" — по воле зрителя (без бэкоффа и без счётчика попыток). */
+    private fun reopen(reason: String) {
+        val manual = reason == "resume"
+        if (!manual && reopenAttempt >= REOPEN_MAX_ATTEMPTS) {
+            Log.w(TAG, "reopen: сдались после $reopenAttempt попыток ($reason) pos=$lastPosMs")
+            reopenAttempt = 0
+            detached = true      // кнопка ▶ у зрителя всё ещё работает — попробуем ещё раз вручную
+            try { player.stop() } catch (_: Exception) {}
+            showStatus(R.string.player_failed)
+            showOsd()
+            return
+        }
+
+        reopening = true
+        val pos = lastPosMs
+        val delay = if (manual) 0L else REOPEN_BACKOFF_MS[minOf(reopenAttempt, REOPEN_BACKOFF_MS.size - 1)]
+        if (!manual) reopenAttempt++
+        Log.i(TAG, "reopen($reason) attempt=$reopenAttempt pos=$pos delay=$delay")
+
+        try { player.stop() } catch (_: Exception) {}
+        showStatus(if (manual) R.string.player_loading else R.string.player_reconnecting)
+
+        handler.postDelayed({
+            reopening = false
+            // Заставку, уже пропущенную зрителем, повторно не пропускаем: playItem сбрасывает флаг.
+            val keepIntro = items.getOrNull(index)?.introSkipped ?: false
+            playItem(index)
+            items.getOrNull(index)?.introSkipped = keepIntro
+            if (pos > 0) pendingSeekMs = pos
+        }, delay)
     }
 
     /**
@@ -609,6 +730,8 @@ class PlayerActivity : BaseActivity() {
     }
 
     private fun togglePause() {
+        // Поток отпущен долгой паузой — «играть» означает переоткрыть с запомненной секунды.
+        if (detached) { reopen("resume"); return }
         if (player.isPlaying) player.pause() else player.play()
         updatePlayPauseLabel()
         bumpOsd()

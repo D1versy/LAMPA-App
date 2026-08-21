@@ -37,6 +37,8 @@
     <string name="player_error">Playback error</string>
     <string name="player_loading">Loading…</string>
     <string name="player_failed">Playback failed</string>
+    <string name="player_reconnecting">Connection lost — reconnecting…</string>
+    <string name="player_paused_detached">⏸ Paused. Press ▶ to resume from here.</string>
     <string name="input_url_title">Please enter Lampa URL</string>
     <string name="select_player">Player selection</string>
     <string name="select_player_reset">The selected player has been reset</string>
