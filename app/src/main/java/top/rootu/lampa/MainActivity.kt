@@ -126,7 +126,6 @@ import top.rootu.lampa.helpers.Prefs.wathToRemove
 import top.rootu.lampa.helpers.Updater
 import top.rootu.lampa.helpers.getAppVersion
 import top.rootu.lampa.helpers.hideSystemUI
-import top.rootu.lampa.helpers.showSystemUI
 import top.rootu.lampa.helpers.isAmazonDev
 import top.rootu.lampa.helpers.isSafeForUse
 import top.rootu.lampa.helpers.isTvBox
@@ -515,6 +514,17 @@ class MainActivity : BaseActivity(),
     private fun setupActivity() {
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
         enableEdgeToEdge()
+        // D1Vision: рисуем и под вырезом камеры. Без этого (targetSdk 28 → режим выреза
+        // DEFAULT) система в портрете letterbox'ит полосу выреза чёрным — те самые 128px
+        // сверху на Pixel-подобных телефонах, из-за которых шапка съезжала вниз, а над ней
+        // оставалась пустая чёрная полоса. SHORT_EDGES доступен с API 28; на ТВ выреза нет,
+        // и флаг там ни на что не влияет.
+        if (VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
         @Suppress("DEPRECATION")
         if (VERSION.SDK_INT <= Build.VERSION_CODES.TIRAMISU)
             overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
@@ -856,13 +866,30 @@ class MainActivity : BaseActivity(),
     }
 
     /**
-     * D1Vision: на ТВ оболочка всегда фуллскрин (sticky-immersive), а на телефоне прятать
-     * статус-бар и навигацию в браузере неудобно — часы, батарея и системный жест «назад»
-     * должны остаться. Полный экран телефону нужен только в плеере (PlayerActivity зовёт
-     * hideSystemUI у себя и этой веткой не затрагивается).
+     * D1Vision: оболочка всегда фуллскрин (sticky-immersive) — и на ТВ, и на телефоне.
+     *
+     * 🔴 На телефоне здесь раньше звался showSystemUI(), и это была главная причина слипшейся
+     * шапки. Тема Theme.LAMPA ставит android:windowFullscreen=true, то есть на окне висит
+     * легаси-флаг FLAG_FULLSCREEN, а он ПЕРЕБИВАЕТ insetsController.show() — бары так и не
+     * показывались (в dumpsys окно всё время с `fl=... FULLSCREEN ...`). Выходила худшая из
+     * комбинаций: системные бары фактически спрятаны, но инсеты окна считались по-разному в
+     * зависимости от того, как попали в активность:
+     *   • холодный старт в портрете   → WebView с screenY=128: мёртвая чёрная полоса выреза,
+     *     часов и батареи всё равно не видно;
+     *   • возврат из плеера / поворот → WebView с screenY=0, и статус-бар рисовался ПОВЕРХ
+     *     шапки Lampa: гамбургер сливался с часами, колокольчик и «⋮» — с wifi и батареей.
+     * Само не чинилось до перезапуска приложения, а возврат из плеера — самый ходовой путь.
+     *
+     * Решение — не бороться с FLAG_FULLSCREEN, а честно уйти в фуллскрин и на телефоне:
+     * системных элементов сверху нет вовсе, накладываться не на что, шапку приложения рисуем
+     * во весь экран. Шторка и системный жест «назад» остаются доступны свайпом от края
+     * (BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE), как это уже работает на ТВ и в плеере.
+     *
+     * Зовётся из onResume() и onConfigurationChanged() — этим закрыты оба пути возврата
+     * (плеер и поворот), отдельный onWindowFocusChanged не нужен.
      */
     private fun applySystemBars() {
-        if (BuildConfig.phoneBuild) showSystemUI() else hideSystemUI()
+        hideSystemUI()
     }
 
     override fun onXWalkInitStarted() {
