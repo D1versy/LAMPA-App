@@ -39,6 +39,9 @@
     <string name="player_failed">Playback failed</string>
     <string name="player_reconnecting">Connection lost — reconnecting…</string>
     <string name="player_paused_detached">⏸ Paused. Press ▶ to resume from here.</string>
+    <string name="player_intro_skipped">⏭ Intro skipped</string>
+    <string name="player_episode_counter">Episode %1$d of %2$d</string>
+    <string name="player_episode_counter_next">Episode %1$d of %2$d · Next: %3$s</string>
     <string name="input_url_title">Please enter Lampa URL</string>
     <string name="select_player">Player selection</string>
     <string name="select_player_reset">The selected player has been reset</string>

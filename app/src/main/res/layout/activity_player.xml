@@ -30,6 +30,26 @@
         android:clickable="false"
         android:visibility="gone" />
 
+    <!-- D1Vision: тост сверху («⏭ Заставка пропущена», 3 с). Отдельно от playerStatus: та
+         центрированная, без автоскрытия и занята «Загрузка…»/ошибкой. Не фокусируемый и не
+         кликабельный — иначе на ТВ попадёт в навигацию пульта, на телефоне съест тап. -->
+    <TextView
+        android:id="@+id/playerToast"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="24dp"
+        android:background="#C0000000"
+        android:paddingLeft="14dp"
+        android:paddingTop="8dp"
+        android:paddingRight="14dp"
+        android:paddingBottom="8dp"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:focusable="false"
+        android:clickable="false"
+        android:visibility="gone" />
+
     <LinearLayout
         android:id="@+id/osdPanel"
         android:layout_width="match_parent"
@@ -48,6 +68,18 @@
             android:textSize="18sp"
             android:maxLines="1"
             android:ellipsize="end" />
+
+        <!-- D1Vision: «Серия 3 из 12 · Дальше: …» — виден только при плейлисте >1 элемента -->
+        <TextView
+            android:id="@+id/osdEpisode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textColor="#B3FFFFFF"
+            android:textSize="14sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:visibility="gone" />
 
         <LinearLayout
             android:id="@+id/osdSeekRow"

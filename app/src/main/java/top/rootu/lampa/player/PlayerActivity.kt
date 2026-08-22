@@ -61,6 +61,7 @@ class PlayerActivity : BaseActivity() {
         const val EXTRA_IPTV = "isIPTV"
         private const val TAG = "PlayerActivity"
         private const val OSD_HIDE_MS = 4000L
+        private const val TOAST_MS = 3000L        // тост «Заставка пропущена» (паритет win/mac)
         private const val ENDED_PERCENT = 96      // как VIDEO_COMPLETED_DURATION_MAX_PERCENTAGE
         private const val SEEK_BASE_MS = 10_000L
         // Сколько ждём тишины, прежде чем отдать накопленную перемотку в плеер. Меньше — серия
@@ -95,7 +96,10 @@ class PlayerActivity : BaseActivity() {
     private data class Item(
         val url: String,
         val title: String?,
-        val startMs: Long,      // timeline.time*1000; 0 если percent>=96 (смотрим с начала)
+        // timeline.time*1000; 0 если percent>=96 (смотрим с начала). var: при РУЧНОМ переходе
+        // ⏮/⏭ сюда кладётся секунда, на которой серию покинули, — вернувшись к ней в этом же
+        // сеансе, зритель продолжит с неё, а не с места, известного на старте плеера.
+        var startMs: Long,
         val quality: List<Pair<String, String>>,   // label → url (порядок сервера)
         val subs: List<Sub>,
         // Разметка заставки: у серии, с которой начали, приходит готовой, у соседних —
@@ -112,6 +116,8 @@ class PlayerActivity : BaseActivity() {
 
     private lateinit var osdPanel: View
     private lateinit var osdTitle: TextView
+    private lateinit var osdEpisode: TextView
+    private lateinit var playerToast: TextView
     private lateinit var osdTimeCur: TextView
     private lateinit var osdTimeDur: TextView
     private lateinit var osdProgress: ProgressBar
@@ -127,6 +133,7 @@ class PlayerActivity : BaseActivity() {
 
     private val handler = Handler(Looper.getMainLooper())
     private val hideOsdRunnable = Runnable { hideOsd() }
+    private val hideToastRunnable = Runnable { playerToast.visibility = View.GONE }
 
     private var items = listOf<Item>()
     private var index = 0
@@ -190,6 +197,8 @@ class PlayerActivity : BaseActivity() {
         videoLayout = findViewById(R.id.videoLayout)
         osdPanel = findViewById(R.id.osdPanel)
         osdTitle = findViewById(R.id.osdTitle)
+        osdEpisode = findViewById(R.id.osdEpisode)
+        playerToast = findViewById(R.id.playerToast)
         osdTimeCur = findViewById(R.id.osdTimeCur)
         osdTimeDur = findViewById(R.id.osdTimeDur)
         osdProgress = findViewById(R.id.osdProgress)
@@ -252,7 +261,14 @@ class PlayerActivity : BaseActivity() {
                 ))
             }
             if (list.isEmpty()) return false
-            items = list
+            // Гард стейл-качества (порт ConfigureQualityMenu из win 1.0.8): в плейлисте карта
+            // quality{} обязана описывать СВОЙ элемент. Если чужой балансер положит одну и ту же
+            // карту всем сериям, запомненное на первой качество молча заиграло бы её файл вместо
+            // текущей серии. У одиночного фильма не трогаем: там карта всегда своя.
+            items = if (list.size > 1)
+                list.map { if (it.quality.isEmpty() || it.quality.any { q -> q.second == it.url }) it
+                           else it.copy(quality = emptyList()) }
+            else list
             index = st.optInt("current_index", 0).coerceIn(0, list.lastIndex)
             return true
         } catch (e: Exception) {
@@ -309,6 +325,8 @@ class PlayerActivity : BaseActivity() {
         val seg = item.skips.firstOrNull { pos >= it.start && pos < it.end - 1 } ?: return
         item.introSkipped = true
         applySeek((seg.end * 1000).toLong())
+        // Без подсказки прыжок на полторы минуты вперёд выглядит как глюк плеера (паритет win/mac)
+        showToast(R.string.player_intro_skipped)
     }
 
     // ─────────────────────────── воспроизведение ───────────────────────────
@@ -341,8 +359,39 @@ class PlayerActivity : BaseActivity() {
         handler.postDelayed(watchdog, 1000)
 
         osdTitle.text = item.title ?: fallbackTitle
+        updateEpisodeIndicator()
         updatePlayPauseLabel()
         updateProgressUi()
+    }
+
+    /** «Серия 3 из 12 · Дальше: …» — только для плейлиста; у фильма и эфира строки нет. */
+    private fun updateEpisodeIndicator() {
+        if (isIPTV || items.size <= 1) {
+            osdEpisode.visibility = View.GONE
+            return
+        }
+        val next = items.getOrNull(index + 1)?.title
+        osdEpisode.text =
+            if (next.isNullOrEmpty()) getString(R.string.player_episode_counter, index + 1, items.size)
+            else getString(R.string.player_episode_counter_next, index + 1, items.size, next)
+        osdEpisode.visibility = View.VISIBLE
+    }
+
+    /**
+     * Ручное переключение серии (кнопки ⏮/⏭ и медиа-клавиши) — в отличие от auto-next,
+     * покидаемая серия НЕ досмотрена: запоминаем секунду, на которой её оставили, чтобы
+     * возврат к ней в этом же сеансе продолжил с неё (порт PlayNeighbor из win 1.0.8).
+     */
+    private fun switchItem(delta: Int) {
+        val target = index + delta
+        if (isIPTV || target < 0 || target >= items.size) return
+        val leaving = items.getOrNull(index)
+        if (leaving != null && lastPosMs > 1000 &&
+            (lastDurMs <= 0 || lastPosMs < lastDurMs * ENDED_PERCENT / 100)
+        ) {
+            leaving.startMs = lastPosMs
+        }
+        playItem(target)
     }
 
     private fun qualityUrl(item: Item): String? {
@@ -540,8 +589,8 @@ class PlayerActivity : BaseActivity() {
         if (isIPTV || items.size <= 1) { prev.visibility = View.GONE; next.visibility = View.GONE }
         if (isIPTV) findViewById<View>(R.id.osdSeekRow).visibility = View.GONE
 
-        prev.setOnClickListener { bumpOsd(); if (index > 0) playItem(index - 1) }
-        next.setOnClickListener { bumpOsd(); if (index + 1 < items.size) playItem(index + 1) }
+        prev.setOnClickListener { bumpOsd(); switchItem(-1) }
+        next.setOnClickListener { bumpOsd(); switchItem(+1) }
         btnPlayPause.setOnClickListener { bumpOsd(); togglePause() }
         audio.setOnClickListener { bumpOsd(); showTrackDialog(isAudio = true) }
         subs.setOnClickListener { bumpOsd(); showTrackDialog(isAudio = false) }
@@ -703,6 +752,18 @@ class PlayerActivity : BaseActivity() {
     }
 
     /**
+     * Тост сверху («⏭ Заставка пропущена»), сам гаснет через 3 с. Отдельная плашка, а не
+     * playerStatus: та центрированная, без автоскрытия и занята «Загрузка…»/ошибкой, — и не
+     * системный Toast: на ТВ он выглядит инородно и живёт мимо нашего оверлея.
+     */
+    private fun showToast(@StringRes id: Int) {
+        playerToast.setText(id)
+        playerToast.visibility = View.VISIBLE
+        handler.removeCallbacks(hideToastRunnable)
+        handler.postDelayed(hideToastRunnable, TOAST_MS)
+    }
+
+    /**
      * Панель в ИНТЕРАКТИВНОМ режиме: фокус на кнопках, стрелки ходят по ним.
      * Отличать от showOsdProgressOnly() (панель как индикатор при перемотке) —
      * решает dispatchKeyEvent: НЕЛЬЗЯ судить по видимости панели. Баг билда 568:
@@ -818,8 +879,8 @@ class PlayerActivity : BaseActivity() {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE,
             KeyEvent.KEYCODE_SPACE -> { togglePause(); swallowUp.add(key); return true }
 
-            KeyEvent.KEYCODE_MEDIA_NEXT -> { if (!isIPTV && index + 1 < items.size) playItem(index + 1); swallowUp.add(key); return true }
-            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> { if (!isIPTV && index > 0) playItem(index - 1); swallowUp.add(key); return true }
+            KeyEvent.KEYCODE_MEDIA_NEXT -> { switchItem(+1); swallowUp.add(key); return true }
+            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> { switchItem(-1); swallowUp.add(key); return true }
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { seekBy(+1); swallowUp.add(key); return true }
             KeyEvent.KEYCODE_MEDIA_REWIND -> { seekBy(-1); swallowUp.add(key); return true }
         }
