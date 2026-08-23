@@ -40,15 +40,10 @@ import javax.net.ssl.SSLSocketFactory
 object Updater {
     private const val MANIFEST_TIMEOUT_MS = 5000
 
-    private data class AppUpdate(
-        val versionCode: Int,
-        val versionName: String,
-        val file: String,
-        val notes: String,
-        val host: String,   // живой хост, с которого пришёл манифест — с него же качаем APK
-    )
+    // Разбор манифеста живёт в OtaManifest — файле без единого Android-импорта,
+    // чтобы его можно было покрыть JVM-юнитами (Updater тянет OkHttp с нативным Conscrypt).
 
-    private var update: AppUpdate? = null
+    private var update: OtaManifest.Update? = null
 
     /** Когда в этом процессе последний раз ходили за манифестом (elapsedRealtime). */
     @Volatile
@@ -104,7 +99,7 @@ object Updater {
             if (host.isEmpty()) return false
 
             val request = Request.Builder()
-                .url("$host/d1vision/apps/${BuildConfig.otaPlatform}/manifest.json")
+                .url(OtaManifest.manifestUrl(host, BuildConfig.otaPlatform))
                 .header("User-Agent", HttpHelper.userAgent)
                 .build()
             val body = HttpHelper.getOkHttpClient(MANIFEST_TIMEOUT_MS).newCall(request).execute().use {
@@ -112,21 +107,8 @@ object Updater {
                 it.body()?.string() ?: return false
             }
 
-            val j = JSONObject(body)
-            val vc = j.optInt("versionCode", 0)
-            val file = j.optString("file", "")
-            if (vc <= BuildConfig.VERSION_CODE || file.isEmpty()) {
-                update = null
-                return false
-            }
-            update = AppUpdate(
-                versionCode = vc,
-                versionName = j.optString("versionName", vc.toString()),
-                file = file,
-                notes = j.optString("notes", ""),
-                host = host,
-            )
-            return true
+            update = OtaManifest.parse(body, BuildConfig.VERSION_CODE, host)
+            return update != null
         } catch (e: Exception) {
             e.printStackTrace()
             return false

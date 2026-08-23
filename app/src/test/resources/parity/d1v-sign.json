@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "about": "sign(): ключ периметра дописывается ТОЛЬКО своим хостам и ТОЛЬКО если его там ещё нет. Двойной d1v= или подпись чужого хоста одинаково плохи: первое даёт 404 снаружи, второе — утечку ключа на TMDB/CDN.",
+  "key": "aaaabbbbccccdddd1111222233334444aaaabbbbccccdddd1111222233334444",
+  "customHost": "https://my.example.org:8443/",
+  "cases": [
+    {
+      "in": "https://tv.d1versy.com:9443/lampainit.js",
+      "out": "https://tv.d1versy.com:9443/lampainit.js?d1v=<KEY>",
+      "platforms": "*",
+      "why": "свой хост без query"
+    },
+    {
+      "in": "https://tv.d1versy.com:9443/qdl/list?a=1",
+      "out": "https://tv.d1versy.com:9443/qdl/list?a=1&d1v=<KEY>",
+      "platforms": "*",
+      "why": "свой хост с query — разделитель амперсанд"
+    },
+    {
+      "in": "http://192.168.87.24:9118/qdl/live/seg/11/seg_0.ts?o=0",
+      "out": "http://192.168.87.24:9118/qdl/live/seg/11/seg_0.ts?o=0&d1v=<KEY>",
+      "platforms": "*",
+      "why": "LAN + существующий параметр"
+    },
+    {
+      "in": "https://tv.d1versy.com:9443/x?d1v=already",
+      "out": "https://tv.d1versy.com:9443/x?d1v=already",
+      "platforms": "*",
+      "why": "идемпотентность: повторная подпись не добавляет второй d1v"
+    },
+    {
+      "in": "https://tv.d1versy.com:9443/x?xd1v=1",
+      "out": "https://tv.d1versy.com:9443/x?xd1v=1&d1v=<KEY>",
+      "platforms": "*",
+      "why": "🔴 имя параметра сравнивается ЦЕЛИКОМ. Подстрочная проверка на d1v= читала это как «уже подписан», и запрос уходил без ключа"
+    },
+    {
+      "in": "https://tv.d1versy.com:9443/x?q=d1v%3D1",
+      "out": "https://tv.d1versy.com:9443/x?q=d1v%3D1&d1v=<KEY>",
+      "platforms": "*",
+      "why": "маркер внутри ЗНАЧЕНИЯ чужого параметра — не подпись"
+    },
+    {
+      "in": "https://api.themoviedb.org/3/movie/1",
+      "out": "https://api.themoviedb.org/3/movie/1",
+      "platforms": "*",
+      "why": "чужой хост — ключ не дописываем никогда"
+    },
+    {
+      "in": "https://jacred.xyz/api/v1/torrents",
+      "out": "https://jacred.xyz/api/v1/torrents",
+      "platforms": "*",
+      "why": "исключение allowlist HTTP-моста, но не наш хост — ключ туда не уходит"
+    },
+    {
+      "in": "https://my.example.org:8443/lampainit.js",
+      "out": "https://my.example.org:8443/lampainit.js?d1v=<KEY>",
+      "platforms": ["windows", "mac", "ios"],
+      "why": "кастомный хост пользователя тоже подписывается"
+    }
+  ],
+  "emptyKeyIsNoop": {
+    "about": "Пустой ключ (D1VSecrets не настроен) — подпись обязана быть тождеством, а не висящим параметром",
+    "in": "https://tv.d1versy.com:9443/lampainit.js",
+    "out": "https://tv.d1versy.com:9443/lampainit.js"
+  }
+}

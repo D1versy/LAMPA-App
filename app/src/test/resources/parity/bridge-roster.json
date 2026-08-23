@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "about": "Контракт window.AndroidJS: одинаковый набор на всех платформах. Отсутствующий метод роняет Lampa исключением на ровном месте — заглушки (saveBookmarks/updateChannel/clearDefaultPlayer/setProxyPAC/getProxyPAC) существуют именно для этого.",
+  "reference": "E:/LAMPA-App/app/src/main/java/top/rootu/lampa/AndroidJS.kt (аннотация JavascriptInterface)",
+  "count": 22,
+  "methods": [
+    "appVersion",
+    "clear",
+    "clearDefaultPlayer",
+    "dump",
+    "exit",
+    "get",
+    "getProxyPAC",
+    "getResp",
+    "httpReq",
+    "key",
+    "openBrowser",
+    "openPlayer",
+    "openTorrentLink",
+    "openYoutube",
+    "saveBookmarks",
+    "set",
+    "setProxyPAC",
+    "size",
+    "storageChange",
+    "updateChannel",
+    "value",
+    "voiceStart"
+  ],
+  "notes": {
+    "getSet": "в Kotlin это operator fun get/set — в JS видны как обычные методы",
+    "storageIsSynchronous": "чтение (get/size/key/value) обязано отвечать из in-page кэша: любая асинхронность ломает контракт Lampa",
+    "getRespIsOneShot": "getResp(id) удаляет запись из карты после чтения — иначе ответ старого запроса достанется новому"
+  }
+}

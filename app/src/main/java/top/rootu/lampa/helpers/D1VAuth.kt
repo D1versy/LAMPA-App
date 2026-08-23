@@ -27,7 +27,10 @@ object D1VAuth {
     }
 
     private fun isPrivateIp(h: String): Boolean {
-        if (h == "localhost" || h == "127.0.0.1") return true
+        // Петля — это /8, а не один адрес. Раньше здесь стояло точное сравнение
+        // с 127.0.0.1, и клиенты расходились в вердикте по 127.0.0.2:
+        // Swift и C# всегда проверяли префикс.
+        if (h == "localhost" || h.startsWith("127.")) return true
         if (h.startsWith("192.168.") || h.startsWith("10.")) return true
         // 172.16.0.0 – 172.31.255.255
         if (h.startsWith("172.")) {

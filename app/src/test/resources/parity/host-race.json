@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "about": "Гонка хостов при старте. Все пробы стартуют ОДНОВРЕМЕННО; победитель — кандидат с МИНИМАЛЬНЫМ индексом среди ответивших, а не «кто ответил первым». Последовательные пробы стоили бы 2.5 с на каждый мёртвый хост при каждом запуске.",
+  "probeTimeoutMs": 2500,
+  "graceMs": 300,
+  "probePath": "lampainit.js",
+  "probeMustBeSigned": true,
+  "successStatus": 200,
+  "candidateOrder": ["custom", "bootstrap", "otaCache"],
+  "otaCacheOnlyAppends": true,
+  "scenarios": [
+    {
+      "name": "дома: LAN отвечает первым",
+      "protectedCount": 0,
+      "probes": [ { "delayMs": 5, "ok": true }, { "delayMs": 50, "ok": true }, { "delayMs": 50, "ok": true } ],
+      "winner": 0,
+      "why": "у кандидата 0 старших нет, его успех закрывает гонку МГНОВЕННО — grace на него не влияет"
+    },
+    {
+      "name": "дома: LAN медленнее интернета, но приоритетнее",
+      "protectedCount": 0,
+      "probes": [ { "delayMs": 200, "ok": true }, { "delayMs": 10, "ok": true }, { "delayMs": 10, "ok": true } ],
+      "winner": 0,
+      "why": "менее приоритетный успех ждёт старших до grace — иначе реплика обгоняла бы дом из-за джиттера"
+    },
+    {
+      "name": "вне дома: LAN мёртв",
+      "protectedCount": 0,
+      "probes": [ { "delayMs": 30, "ok": false }, { "delayMs": 60, "ok": true }, { "delayMs": 60, "ok": true } ],
+      "winner": 1,
+      "why": "провал старшего немедленно освобождает победу следующему — ждать grace незачем"
+    },
+    {
+      "name": "дом лёг: остаётся реплика",
+      "protectedCount": 0,
+      "probes": [ { "delayMs": 10, "ok": false }, { "delayMs": 20, "ok": false }, { "delayMs": 30, "ok": true } ],
+      "winner": 2,
+      "why": "бекап-сервер на второй площадке"
+    },
+    {
+      "name": "приоритетный не успел в grace",
+      "protectedCount": 0,
+      "probes": [ { "delayMs": 900, "ok": true }, { "delayMs": 10, "ok": true } ],
+      "winner": 1,
+      "why": "grace одноразовый и отсчитывается от ПЕРВОГО не победившего успеха; вечно ждать старших нельзя"
+    },
+    {
+      "name": "кастомный хост защищён: медленный, но свой",
+      "protectedCount": 1,
+      "probes": [ { "delayMs": 900, "ok": true }, { "delayMs": 10, "ok": true } ],
+      "winner": 0,
+      "why": "явный выбор пользователя не должен молча проигрывать более быстрому LAN: пока проба защищённого не завершилась, победа не отдаётся никому"
+    },
+    {
+      "name": "кастомный хост защищён, но мёртв",
+      "protectedCount": 1,
+      "probes": [ { "delayMs": 50, "ok": false }, { "delayMs": 10, "ok": true } ],
+      "winner": 1,
+      "why": "после провала защищённого гонка продолжается обычным порядком"
+    },
+    {
+      "name": "не ответил никто",
+      "protectedCount": 0,
+      "probes": [ { "delayMs": 10, "ok": false }, { "delayMs": 10, "ok": false } ],
+      "winner": -1,
+      "why": "живого хоста нет — экран «Сервер недоступен»"
+    },
+    {
+      "name": "пустой список кандидатов",
+      "protectedCount": 0,
+      "probes": [],
+      "winner": -1,
+      "why": "вырожденный случай не должен вешать старт"
+    }
+  ]
+}

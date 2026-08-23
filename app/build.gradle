@@ -185,10 +185,32 @@ android {
     buildFeatures {
         viewBinding true
     }
+    // Юниты обязаны падать на обращении к Android SDK, а не тихо получать нули:
+    // молчаливая заглушка превратила бы тест в проверку, доказывающую свою зелёность.
+    testOptions {
+        unitTests.returnDefaultValues = false
+        unitTests.all { test ->
+            // Канарейка гейта: воркер тестов обязан видеть D1V_SELFCHECK, иначе
+            // прогон -SelfCheck соврал бы, что сьюта не умеет краснеть.
+            test.environment 'D1V_SELFCHECK', (System.getenv('D1V_SELFCHECK') ?: '')
+        }
+    }
+
     namespace 'top.rootu.lampa'
 }
 
 dependencies {
+    // ── D1Vision: JVM-юниты (эмулятор не нужен, гоняются на любой машине) ──
+    // junit той же версии, что уже подключён как implementation для совместимости
+    // с Crosswalk — расхождение версий дало бы два разных Assert в одном классpath.
+    testImplementation 'junit:junit:4.13.2'
+    // Настоящий org.json вместо заглушки из android.jar: без него любой JSONObject
+    // в юните бросает «not mocked».
+    testImplementation 'org.json:json:20231013'
+    // Виртуальное время для гонки хостов: единственная из трёх платформ, где её
+    // можно проверить полностью детерминированно.
+    testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3"
+
     // https://developer.android.com/studio/write/java8-support#library-desugaring
     //noinspection GradleDependency 2.0.4 for AGP 7.4
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'

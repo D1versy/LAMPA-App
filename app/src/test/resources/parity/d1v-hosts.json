@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "about": "isOurHost / isPrivateIP. Расширил множество — ключ периметра утекает на чужой хост и чужая страница получает права нативного моста. Сузил — приложение не подписывает свои же запросы и живой хост считается мёртвым.",
+  "customHost": "https://my.example.org:8443/",
+  "cases": [
+    { "host": "d1versy.com",              "ours": true,  "platforms": "*", "why": "апекс-домен" },
+    { "host": "tv.d1versy.com",           "ours": true,  "platforms": "*", "why": "внешний вход" },
+    { "host": "tv2.d1versy.com",          "ours": true,  "platforms": "*", "why": "реплика" },
+    { "host": "TV.D1VERSY.COM",           "ours": true,  "platforms": "*", "why": "регистр не важен" },
+
+    { "host": "d1versy.com.evil.tld",     "ours": false, "platforms": "*", "why": "домен-приманка: наш домен как ПРЕФИКС чужого" },
+    { "host": "tv.d1versy.com.evil.tld",  "ours": false, "platforms": "*", "why": "то же с поддоменом" },
+    { "host": "xd1versy.com",             "ours": false, "platforms": "*", "why": "суффиксный матч обязан требовать точку" },
+    { "host": "notd1versy.com",           "ours": false, "platforms": "*", "why": "то же" },
+    { "host": "evil.com",                 "ours": false, "platforms": "*", "why": "чужой хост" },
+    { "host": "",                         "ours": false, "platforms": "*", "why": "пустой хост" },
+
+    { "host": "192.168.87.24",            "ours": true,  "platforms": "*", "why": "домашний сервер" },
+    { "host": "192.168.0.1",              "ours": true,  "platforms": "*", "why": "RFC1918 /16" },
+    { "host": "10.0.0.5",                 "ours": true,  "platforms": "*", "why": "RFC1918 /8" },
+    { "host": "172.16.0.1",               "ours": true,  "platforms": "*", "why": "нижняя граница RFC1918 /12" },
+    { "host": "172.31.255.255",           "ours": true,  "platforms": "*", "why": "верхняя граница RFC1918 /12" },
+    { "host": "172.15.0.1",               "ours": false, "platforms": "*", "why": "за нижней границей /12" },
+    { "host": "172.32.0.1",               "ours": false, "platforms": "*", "why": "за верхней границей /12" },
+    { "host": "1721.6.0.1",               "ours": false, "platforms": "*", "why": "префикс 172 без точки — не наш" },
+    { "host": "8.8.8.8",                  "ours": false, "platforms": "*", "why": "публичный адрес" },
+    { "host": "193.168.87.24",            "ours": false, "platforms": "*", "why": "похож на 192.168, но публичный" },
+
+    { "host": "localhost",                "ours": true,  "platforms": "*", "why": "петля по имени" },
+    { "host": "127.0.0.1",                "ours": true,  "platforms": "*", "why": "петля" },
+    { "host": "127.0.0.2",                "ours": true,  "platforms": "*", "why": "🔴 петля — это /8, а не один адрес. Именно здесь Kotlin расходился со Swift и C#" },
+    { "host": "127.255.255.254",          "ours": true,  "platforms": "*", "why": "верх петлевого /8" },
+
+    { "host": "my.example.org",           "ours": true,  "platforms": ["windows", "mac", "ios"], "why": "кастомный хост пользователя (customHost выше)" },
+    { "host": "other.example.org",        "ours": false, "platforms": "*", "why": "не тот кастом" }
+  ],
+  "otaHostsAreNotOurs": {
+    "about": "🔴 OTA-хосты из hosts.json НЕ входят в isOurHost — только в список кандидатов гонки. Иначе подменённый hosts.json увёл бы и ключ платформы, и права нативного моста на чужой адрес.",
+    "host": "ota.example.net",
+    "ours": false,
+    "mustAppearInCandidates": true
+  },
+  "divergences": [
+    {
+      "platform": "android",
+      "rule": "кастомный хост пользователя в D1VAuth.isOurHost НЕ входит — его добавляет обёртка HostResolver.isOurHost(context, …)",
+      "file": "E:/LAMPA-App/app/src/main/java/top/rootu/lampa/helpers/HostResolver.kt"
+    },
+    {
+      "platform": "tizen",
+      "rule": "намеренно другое правило: LAN пускается без ключа, подпись только для *.d1versy.com",
+      "file": "E:/lampac/Modules/LampaWeb/widgets/samsung/loader.js"
+    }
+  ]
+}

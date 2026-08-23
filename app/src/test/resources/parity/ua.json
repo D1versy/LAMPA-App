@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "about": "«4 замка» маршрутизации плеера Lampa. Нарушение любого — контент молча уходит во встроенный web-плеер: звук есть, картинки нет.",
+  "forbiddenSubstrings": [
+    { "value": "mac os x",   "why": "замок 4: ветка Platform.macOS() перехватывает запуск раньше андроидной, ищет mpv/iina/infuse и не находит" },
+    { "value": "windows nt", "why": "дефолтный UA Edge протащил бы это — UserAgent обязан ЗАМЕНЯТЬ строку целиком, а не дополнять" },
+    { "value": "iphone",     "why": "то же для iOS-оболочки" },
+    { "value": "ipad",       "why": "то же" }
+  ],
+  "requiredToken": {
+    "value": "lampa_client",
+    "why": "замок 2: без него Platform.init не ставит platform=android (автодетекции по window.AndroidJS нет)"
+  },
+  "platformTokenRegex": "lampa_client d1vision_(mac|ios|android|windows)/\\d+\\.\\d+\\.\\d+-\\d+",
+  "tokenMustFollowClientToken": true,
+  "platforms": ["mac", "ios", "android", "tizen", "windows"],
+  "phoneUsesAndroidToken": {
+    "about": "Телефонная Android-сборка НЕ вводит своей платформы: тот же токен d1vision_android и тот же ключ d1v.keys.android. Отдельный токен лишил бы телефон периметра и включил бы мобильный профиль, которого владелец не хочет.",
+    "otaChannel": "androidphone",
+    "uaToken": "d1vision_android"
+  },
+  "versionCode": {
+    "min": 484,
+    "why": "Lampa гейтит нативные мосты по коду: openPlayer от 10, httpReq от 16, openBrowser от 484. Код ниже 484 молча выключает мосты у уже установленных копий.",
+    "format": "versionName-versionCode",
+    "formatRegex": "^\\d+\\.\\d+\\.\\d+-\\d+$"
+  },
+  "clientsMustNotForcePlatformKeys": {
+    "about": "Форс-ключи platform/player/player_torrent/player_iptv ставит СЕРВЕР по UA-токену. Возвращение форса в клиент = вторая точка правды, которая не обновляется по воздуху.",
+    "forbiddenInClientResources": ["player_torrent", "player_iptv", "internal_torrclient"]
+  }
+}

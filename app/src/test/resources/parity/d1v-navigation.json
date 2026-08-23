@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "about": "isAllowedNavigation: allowlist схем. Ветка по умолчанию true открыла бы intent:/javascript:/кастом-схемы; http(s) без проверки хоста превратил бы оболочку в обычный браузер.",
+  "customHost": "https://my.example.org:8443/",
+  "cases": [
+    { "url": "about:blank",                        "allowed": true,  "platforms": "*", "why": "внутренние экраны" },
+    { "url": "data:text/html,hello",               "allowed": true,  "platforms": "*", "why": "NavigateToString" },
+    { "url": "blob:https://tv.d1versy.com/abc",    "allowed": true,  "platforms": "*", "why": "объекты страницы" },
+    { "url": "file:///C:/tmp/x.html",              "allowed": true,  "platforms": "*", "why": "локальные ресурсы оболочки" },
+
+    { "url": "https://tv.d1versy.com:9443/",       "allowed": true,  "platforms": "*", "why": "наш хост" },
+    { "url": "http://192.168.87.24:9118/",         "allowed": true,  "platforms": "*", "why": "LAN" },
+    { "url": "https://my.example.org:8443/",       "allowed": true,  "platforms": ["windows", "mac", "ios"], "why": "кастомный хост" },
+
+    { "url": "https://evil.com/",                  "allowed": false, "platforms": "*", "why": "чужой http(s)" },
+    { "url": "https://tv.d1versy.com.evil.tld/",   "allowed": false, "platforms": "*", "why": "домен-приманка" },
+    { "url": "javascript:alert(1)",                "allowed": false, "platforms": "*", "why": "исполнение в контексте страницы" },
+    { "url": "intent://x#Intent;scheme=http;end",  "allowed": false, "platforms": "*", "why": "запуск чужого приложения" },
+    { "url": "mailto:a@b.c",                       "allowed": false, "platforms": "*", "why": "не наша схема" },
+    { "url": "ftp://tv.d1versy.com/x",             "allowed": false, "platforms": "*", "why": "наш хост, но не наша схема" }
+  ],
+  "divergences": [
+    {
+      "platform": "mac",
+      "rule": "URL с пустой схемой Swift-реализация пропускала (true), C# отклонял (false). Общий вердикт — false: относительный URL до фильтра оболочки не доходит, а «пусто → пускаем» это default-open.",
+      "resolvedTo": false
+    }
+  ]
+}
