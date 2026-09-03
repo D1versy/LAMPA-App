@@ -71,7 +71,7 @@ object ChannelHelper {
             BOOK -> R.drawable.ch_book_shape
             HIST -> R.drawable.ch_hist_shape
             LIKE -> R.drawable.ch_like_shape
-            else -> R.drawable.lampa_logo_round
+            else -> R.drawable.d1vision_logo_round
         }
         // val themedContext = ContextThemeWrapper(App.context, R.style.Theme_LAMPA)
         val bitmap = convertToBitmap(context = App.context, icon)

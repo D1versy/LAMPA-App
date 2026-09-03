@@ -79,7 +79,14 @@ object WatchNext {
     suspend fun updateWatchNext() {
         if (!isTvContentProviderAvailable) return
         val context = App.context
-        val deleted = removeStale()
+        // removeStale() читает TV-провайдер курсором: на слабом ТВ он может ответить ENOMEM.
+        // Ряд «Продолжить просмотр» — не повод ронять приложение (claude/06 §DE).
+        val deleted = try {
+            removeStale()
+        } catch (e: Throwable) {
+            Log.e(TAG, "removeStale failed: $e")
+            return
+        }
         debugLog(TAG, "updateWatchNext() WatchNext stale cards removed: $deleted")
 
         val lst = when { // reversed order

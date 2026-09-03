@@ -2284,7 +2284,7 @@ class MainActivity : BaseActivity(),
             setImageDrawable(
                 AppCompatResources.getDrawable(
                     context,
-                    R.drawable.lampa_logo_round
+                    R.drawable.d1vision_logo_round
                 )
             )
             customSize = dp2px(context, 32f)

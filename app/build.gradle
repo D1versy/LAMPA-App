@@ -18,19 +18,16 @@ def getVersionCode = { ->
     }
 }
 
-def getVersionName = { ->
-    try {
-        def stdout = new ByteArrayOutputStream()
-        exec {
-            commandLine 'git', 'describe', '--tags', '--dirty'
-            standardOutput = stdout
-        }
-        return stdout.toString().trim().replaceFirst("^v", "")
-    }
-    catch (ignored) {
-        return '0.0.0'
-    }
-}
+// D1Vision: маркетинговая версия, которую видит пользователь (экран «Обновление»,
+// уведомление OTA, UA-токен d1vision_android/<versionName>-<versionCode>).
+// Апстрим брал её из `git describe --tags`, но в нашем форке тегов нет — describe падал,
+// и во ВСЕХ сборках висело «0.0.0». Теперь это явная строка, как <Version> у win-app
+// (Directory.Build.props) и MARKETING_VERSION у Apple (mac-app/project.yml).
+// ⚠️ Бампать РУКАМИ при заметном релизе. Единственный ключ сравнения для OTA —
+// versionCode (число коммитов в origin/main), versionName на установку не влияет.
+def appVersionName = "1.0.13"
+
+def getVersionName = { -> appVersionName }
 
 android {
     //noinspection GradleDependency

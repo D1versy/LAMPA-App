@@ -62,23 +62,47 @@ object ChannelManager {
     @RequiresApi(Build.VERSION_CODES.O)
     fun update(name: String, list: List<LampaCard>) {
         if (BuildConfig.DEBUG) Log.d(TAG, "update($name, ${list.size} items)")
-        removeLostChannels()
+        // Разбор самого канала тоже ходит в TV-провайдер (ChannelHelper.list/get) — и тоже
+        // не имеет права уронить приложение, когда провайдеру не хватило памяти.
+        try {
+            removeLostChannels()
+        } catch (e: Throwable) {
+            Log.e(TAG, "removeLostChannels failed: $e")
+            return
+        }
 
         synchronized(lock) {
             val displayName = getChannelDisplayName(name)
-            val channel = ChannelHelper.get(name) ?: run {
-                ChannelHelper.add(name, displayName)
-                ChannelHelper.get(name)
+            val channel = try {
+                ChannelHelper.get(name) ?: run {
+                    ChannelHelper.add(name, displayName)
+                    ChannelHelper.get(name)
+                }
+            } catch (e: Throwable) {
+                Log.e(TAG, "Не смог получить канал $name: $e")
+                null
             } ?: return@synchronized
 
             // Update channel metadata
-            updateChannelMetadata(channel, displayName)
+            try {
+                updateChannelMetadata(channel, displayName)
+            } catch (e: Throwable) {
+                Log.e(TAG, "updateChannelMetadata failed: $e")
+            }
 
             // Add programs to the channel
             if (!Coroutines.running("update_channel_$name")) { // fix duplicates
                 Coroutines.launch("update_channel_$name") {
-                    clearChannelPrograms(channel.id)
-                    addProgramsToChannel(channel.id, name, list)
+                    // Полка главного экрана — украшение. Если TV-провайдер не отдал память
+                    // (ENOMEM на слабом ТВ) или отвалился, приложение падать не должно:
+                    // раньше исключение из этой корутины улетало в глобальный обработчик
+                    // и показывало экран сбоя поверх фильма. См. claude/06 §DE.
+                    try {
+                        clearChannelPrograms(channel.id)
+                        addProgramsToChannel(channel.id, name, list)
+                    } catch (e: Throwable) {
+                        Log.e(TAG, "Не смог обновить полку $name: $e")
+                    }
                 }
             } else {
                 if (BuildConfig.DEBUG) Log.d(TAG, "scope update_channel_$name already active!")
@@ -127,16 +151,12 @@ object ChannelManager {
     @SuppressLint("RestrictedApi")
     @RequiresApi(Build.VERSION_CODES.O)
     private fun addProgramsToChannel(channelId: Long, provName: String, list: List<LampaCard>) {
+        // Дублей тут быть не может: единственный вызывающий только что выполнил
+        // clearChannelPrograms(channelId). Прежняя проверка existsInChannel() на КАЖДУЮ
+        // карточку тянула полный курсор по каналу — до 30 аллокаций CursorWindow подряд.
+        // На 2-ГБ телевизоре во время просмотра это и падало с ENOMEM (claude/06 §DE).
         list.forEachIndexed { index, card ->
-            val program = createPreviewProgram(channelId, provName, card, list.size - index)
-            program?.let {
-                if (existsInChannel(channelId, it.internalProviderId)) {
-                    if (BuildConfig.DEBUG) Log.d(
-                        TAG,
-                        "Program ${it.internalProviderId} already exists in channel $channelId, removing..."
-                    )
-                    deleteFromChannel(channelId, it.internalProviderId)
-                }
+            createPreviewProgram(channelId, provName, card, list.size - index)?.let {
                 App.context.contentResolver.insert(
                     TvContractCompat.buildPreviewProgramsUriForChannel(channelId),
                     it.toContentValues()
@@ -194,11 +214,6 @@ object ChannelManager {
             }
         }
         return null
-    }
-
-    @SuppressLint("RestrictedApi")
-    private fun existsInChannel(channelId: Long, movieId: String): Boolean {
-        return findProgramByMovieId(channelId, movieId) != null
     }
 
     private fun removeProgram(previewProgramId: Long): Int {

@@ -19,7 +19,6 @@ import org.json.JSONObject
 import top.rootu.lampa.browser.Browser
 import top.rootu.lampa.channels.LampaChannels
 import top.rootu.lampa.channels.LampaChannels.updateChanByName
-import top.rootu.lampa.channels.WatchNext.updateWatchNext
 import top.rootu.lampa.content.LampaProvider
 import top.rootu.lampa.helpers.Helpers.debugLog
 import top.rootu.lampa.helpers.Helpers.filterValidCubBookmarks
@@ -573,10 +572,10 @@ class AndroidJS(private val mainActivity: MainActivity, private val browser: Bro
                 }
 
                 LampaProvider.LATE -> {
-                    // Handle add to Watch Next from Lampa
+                    // Handle add to Watch Next
                     CoroutineScope(Dispatchers.Default).launch {
                         delay(UPDATE_DELAY)
-                        updateWatchNext()
+                        LampaChannels.updateWatchNextGuarded()
                     }
                 }
             }

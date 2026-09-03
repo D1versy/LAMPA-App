@@ -6,14 +6,14 @@
     <string name="no_torrent_activity_found">There is no application to open torrent links. Please, install TorrServe or any other App working with torrents.</string>
     <string name="no_youtube_activity_found">There is no application to open YouTube links. Please, install YouTube App.</string>
     <string name="no_launch_player">The selected player does not support playing this video</string>
-    <string name="invalid_url">Enter the correct website address, for example:\nhttp://lampa.mx</string>
+    <string name="invalid_url">Enter the correct server address, for example:\nhttp://192.168.87.24:9118</string>
     <string name="cancel">Cancel</string>
     <string name="save">Save</string>
     <string name="show_menu">Open menu</string>
     <string name="change_engine">Change Browser</string>
     <string name="change_engine_title">Choose Browser</string>
     <string name="close_menu_title">Close This Menu</string>
-    <string name="change_url_title">Change Lampa URL</string>
+    <string name="change_url_title">Change server address</string>
     <string name="engine_crosswalk_obsolete">Crosswalk (XWalkLib) - obsolete</string>
     <string name="engine_crosswalk">Crosswalk (XWalkLib)</string>
     <string name="engine_webkit">Android System WebView</string>
@@ -42,7 +42,7 @@
     <string name="player_intro_skipped">⏭ Intro skipped</string>
     <string name="player_episode_counter">Episode %1$d of %2$d</string>
     <string name="player_episode_counter_next">Episode %1$d of %2$d · Next: %3$s</string>
-    <string name="input_url_title">Please enter Lampa URL</string>
+    <string name="input_url_title">Please enter the server address</string>
     <string name="select_player">Player selection</string>
     <string name="select_player_reset">The selected player has been reset</string>
     <string name="not_found_speech">Failed to start voice input</string>
@@ -69,7 +69,7 @@
     <string name="download_failed_message">Download failed</string>
     <string name="download_progress_message">Downloading the Crosswalk Project Service from remote host…</string>
     <string name="select_store_message">Please install the Crosswalk Project Service from STORE_NAME</string>
-    <string name="unsupported_store_message">The application stores on your device don\'t support Crosswalk Project Service. Please download Crosswalk Project Service manually from this website (https://github.com/lampa-app/LAMPA/releases/tag/1.1.0).</string>
+    <string name="unsupported_store_message">The application stores on your device don\'t support Crosswalk Project Service. Please install it manually and restart the app.</string>
     <string name="xwalk_download_crosswalk">Direct Download</string>
     <string name="xwalk_get_crosswalk">Get Crosswalk</string>
     <string name="xwalk_cancel">Cancel</string>
@@ -79,9 +79,9 @@
     <string name="xwalk_market_crosswalk" translatable="false">Google Play</string>
     <string name="xwalk_apk_link">https://github.com/lampa-app/LAMPA/releases/download/1.1.0/XWalkRuntimeLib_%s.apk</string>
     <!--Search-->
-    <string name="open_lampa">open lampa</string>
-    <string name="open_settings">open lampa settings</string>
-    <string name="lampa_suxx">lampa suxx</string>
+    <string name="open_lampa">open d1vision</string>
+    <string name="open_settings">open d1vision settings</string>
+    <string name="lampa_suxx">d1vision suxx</string>
     <string name="series">TV Series</string>
     <string name="shortyear" />
     <!--Channels-->
@@ -100,11 +100,11 @@
     <string name="update_home_title">Update TV Recommendations</string>
     <string name="backup_restore_title">Settings Backup &amp; Restore</string>
     <string name="backup_all">Backup All Settings</string>
-    <string name="backup_all_title">Lampa &amp; App Settings Backup</string>
+    <string name="backup_all_title">Backup all settings</string>
     <string name="restore_app_title">Restore App Preferences</string>
-    <string name="restore_storage_title">Restore Lampa Settings</string>
+    <string name="restore_storage_title">Restore site settings</string>
     <string name="default_setting_title">Load Default Settings</string>
-    <string name="change_note">This action can reset the Lampa settings to their default values. Before this change, it is recommended to make a backup copy of your settings!</string>
+    <string name="change_note">This action can reset the site settings to their default values. Before this change, it is recommended to make a backup copy of your settings!</string>
     <string name="settings_saved_toast">All settings saved to %s</string>
     <string name="settings_save_fail">Failed to perform backup</string>
     <string name="settings_migrate_fail">Failed to migrate settings</string>
@@ -113,7 +113,7 @@
     <string name="migrate">Migration</string>
     <!--App Errors-->
     <string name="app_crash_title">Sorry for the Inconvenience</string>
-    <string name="app_crash_message">Sometimes Lampa has faults but no worry. In next update we will fix this. You can report this error in out Telegram channel - @lampa_group. Please click on Restart App button to continue.</string>
+    <string name="app_crash_message">The app has stopped unexpectedly. Your data is safe. Tap “Restart” to continue, or “Show Logs” to see the details.</string>
     <string name="app_crash_copy">Copy Logs to Clipboard</string>
     <string name="app_crash_copied">Logs copied to clipboard</string>
     <string name="app_crash_save_to">Crash Logs saved to</string>

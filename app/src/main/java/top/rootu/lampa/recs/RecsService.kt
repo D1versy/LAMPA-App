@@ -100,7 +100,7 @@ object RecsService {
             it?.name?.capitalizeFirstLetter()?.takeIf { genre -> genre.isNotBlank() }
         }?.takeIf { it.isNotEmpty() }?.toTypedArray()
 
-        builder.setBadgeIcon(R.drawable.lampa_logo_icon)
+        builder.setBadgeIcon(R.drawable.d1vision_logo_round)
             .setIdTag("${card.id}")
             .setTitle(title)
             .setContentImage(finalBitmap)

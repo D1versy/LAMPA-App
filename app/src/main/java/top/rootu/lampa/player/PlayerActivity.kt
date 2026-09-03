@@ -28,6 +28,7 @@ import top.rootu.lampa.App
 import top.rootu.lampa.BaseActivity
 import top.rootu.lampa.BuildConfig
 import top.rootu.lampa.R
+import top.rootu.lampa.channels.LampaChannels
 import top.rootu.lampa.helpers.D1VAuth
 import top.rootu.lampa.helpers.hideSystemUI
 
@@ -59,6 +60,14 @@ class PlayerActivity : BaseActivity() {
         const val EXTRA_STATE = "state"
         const val EXTRA_TITLE = "title"
         const val EXTRA_IPTV = "isIPTV"
+
+        // Плеер на экране. Пока он жив, полки главного экрана не трогаем: на слабых ТВ
+        // (2 ГБ) запрос к TV-провайдеру рядом с декодером ловит ENOMEM и роняет всё
+        // приложение — см. claude/06 §DE.
+        @Volatile
+        var isActive = false
+            private set
+
         private const val TAG = "PlayerActivity"
         private const val OSD_HIDE_MS = 4000L
         private const val TOAST_MS = 3000L        // тост «Заставка пропущена» (паритет win/mac)
@@ -191,6 +200,7 @@ class PlayerActivity : BaseActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        isActive = true
         setContentView(R.layout.activity_player)
         hideSystemUI()
 
@@ -959,6 +969,9 @@ class PlayerActivity : BaseActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "release failed", e)
         }
+        isActive = false
+        // память освободилась — догоняем полки, отложенные на время просмотра
+        LampaChannels.flushPending()
         super.onDestroy()
     }
 }
