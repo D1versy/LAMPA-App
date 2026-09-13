@@ -1,25 +1,39 @@
-<p align="center" style="text-align: center">
-  <img src="https://github.com/yumata/lampa/blob/main/img/logo-icon.svg" width="25%"><br/>
-</p>
-  <br/>
-<p align="center">
-  LAMPA client browser for Android and Android TV
-  <br/>
-  <br/>
-  <a href="https://github.com/lampa-app/LAMPA/issues">
-    <img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat" alt="CodeFactor" />
-  </a>
-  <a href="https://github.com/lampa-app/LAMPA/actions/workflows/android.yml" rel="nofollow">
-    <img src="https://img.shields.io/github/actions/workflow/status/lampa-app/LAMPA/android.yml?logo=Github" alt="Build" />
-  </a>
-  <a href="https://github.com/lampa-app/LAMPA/tags" rel="nofollow">
-    <img alt="GitHub tag (latest SemVer pre-release)" src="https://img.shields.io/github/v/tag/lampa-app/LAMPA?include_prereleases&label=version"/>
-  </a>
-</p>
-<p align="center">
-System requirements: Android 4.1+ (API level 16+)
-</p>
+# D1Vision — клиент домашнего медиасервера для Android и Android TV
 
-### Last release links:
-- [Release page](https://github.com/lampa-app/LAMPA/releases/latest)
-- [Direct apk download link](https://github.com/lampa-app/LAMPA/releases/latest/download/app-lite-release.apk)
+Нативная оболочка под **свой** медиасервер: WebView с интерфейсом каталога плюс встроенный плеер на libVLC. В штатной работе приложение ходит только к нашему серверу.
+
+Это форк [`lampa-app/LAMPA`](https://github.com/lampa-app/LAMPA), ушедший далеко от исходника. Общего с апстримом осталось ядро WebView-оболочки; всё остальное — своё.
+
+## Чем отличается от исходного проекта
+
+- **Свой сервер и свои резервные адреса** — зашиты в сборку (`defaultAppUrl`, `fallbackHosts`), выбираются гонкой при старте.
+- **Плеер внутри** — libVLC. Внешние плееры отключены: качество, дорожки, субтитры и позиция просмотра живут в приложении.
+- **Обновление по воздуху со своего сервера**, а не из GitHub Releases: манифест `<host>/d1vision/apps/<канал>/manifest.json`, сравнение целочисленное по `versionCode`.
+- **Позиция просмотра уходит на сервер** и общая для всех устройств в группе.
+- **Русский интерфейс** независимо от локали устройства.
+- **Подпись периметра** (`D1VAuth`): сервер снаружи отвечает только приложениям.
+
+## Сборки
+
+| Флавор | Для чего | Канал обновлений |
+|---|---|---|
+| `lite` | Android TV и приставки | `android` |
+| `phone` | смартфон, «D1Vision Mobile» — свой `applicationId`, портретная ориентация | `androidphone` |
+| `full` | сборка со встроенным Crosswalk (не используется) | — |
+| `ruStore` | без самоустановки, обновление через магазин | — |
+
+```bash
+./gradlew assembleLiteDebug     # ТВ-сборка
+./gradlew assemblePhoneDebug    # телефон
+./gradlew testLiteDebugUnitTest # юниты (мост, OTA-манифест, периметр)
+```
+
+Публикация OTA — из репозитория медиасервера: `scripts/publish-android-build.ps1`.
+
+## Документация
+
+Устройство клиента, контракт моста `window.AndroidJS` и грабли — в `CLAUDE.md` этого репозитория и в базе знаний медиасервера (`claude/08-clients.md`).
+
+## Требования
+
+Android 5.0+ (API 21) для ТВ-сборки, Android 6.0+ (API 23) для телефонной.

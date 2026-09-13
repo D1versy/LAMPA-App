@@ -15,7 +15,6 @@ import top.rootu.lampa.models.Favorite
 import top.rootu.lampa.models.LampaRec
 import top.rootu.lampa.models.WatchNextToAdd
 import top.rootu.lampa.tmdb.TMDB
-import java.util.Locale
 
 object Prefs {
 
@@ -30,6 +29,9 @@ object Prefs {
     private const val LAMPA_SOURCE = "source"
     private const val APP_BROWSER = "browser"
     private const val APP_LANG = "lang"
+
+    /** D1Vision: русский по умолчанию, независимо от локали устройства (см. appLang ниже). */
+    const val DEFAULT_LANG = "ru"
     private const val TMDB_API_KEY = "tmdb_api_url"
     private const val TMDB_IMG_KEY = "tmdb_image_url"
     private const val FAV_KEY = "fav"
@@ -88,9 +90,13 @@ object Prefs {
         get() = appPrefs.getString(APP_BROWSER, MainActivity.SELECTED_BROWSER)
         set(browser) = appPrefs.edit().putString(APP_BROWSER, browser).apply()
 
+    // D1Vision: язык приложения — русский, а не системная локаль телевизора.
+    // Раньше дефолтом был Locale.getDefault().language: на приставке с английской системой
+    // клиент стартовал по-английски, хотя весь контент и весь сервер русские. Ресурсы теперь
+    // тоже русские в неквалифицированной values/, так что фолбэк ведёт сюда же при любой
+    // системе. Разбор — медиасервер, claude/06-fixes-and-gotchas.md §DV.
     var Context.appLang: String
-        get() = appPrefs.getString(APP_LANG, Locale.getDefault().language)
-            ?: Locale.getDefault().language
+        get() = appPrefs.getString(APP_LANG, DEFAULT_LANG) ?: DEFAULT_LANG
         set(lang) = appPrefs.edit().putString(APP_LANG, lang).apply()
 
     // D1Vision: адрес мимо наших хостов игнорируем и откатываемся на прокси своего сервера

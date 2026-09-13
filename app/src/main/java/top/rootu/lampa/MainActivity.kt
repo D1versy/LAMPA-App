@@ -1763,7 +1763,9 @@ class MainActivity : BaseActivity(),
         inputManager: InputMethodManager
     ) {
         input?.apply {
-            setText(LAMPA_URL.ifEmpty { "http://lampa.mx" })
+            // D1Vision: подставляем НАШ сервер, а не lampa.mx. Соседняя подсказка invalid_url
+            // уже показывает наш адрес — вместе они противоречили друг другу. §DV.
+            setText(LAMPA_URL.ifEmpty { BuildConfig.defaultAppUrl })
             if (msg.isNotEmpty()) {
                 tilt?.isErrorEnabled = true
                 tilt?.error = msg
