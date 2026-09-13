@@ -924,9 +924,22 @@ class MainActivity : BaseActivity(),
         finish()
     }
 
+    /**
+     * D1Vision: рантайм Crosswalk берём со СВОЕГО сервера, а не из релизов апстрима.
+     *
+     * Эта ветка — страховка: [setupBrowser] включает XWalk сам, когда на устройстве нет
+     * системного WebView. Пока ссылка вела на github.com/lampa-app/LAMPA, страховка зависела
+     * от чужого тега — удалили бы ассет, и она умерла бы молча. Файлы зеркалированы в
+     * client-builds/xwalk/ и отдаются роутом /d1vision/apps/{platform}/{file}.
+     *
+     * Хост берём из [LAMPA_URL] (он выставлен в onCreate до setupBrowser), а не из константы:
+     * так ссылка сама следует за тем сервером, на котором клиент сейчас живёт — LAN или внешний.
+     */
     private fun setupXWalkApkUrl() {
         val abi = MyXWalkEnvironment.getRuntimeAbi()
-        val apkUrl = String.format(getString(R.string.xwalk_apk_link), abi)
+        val base = LAMPA_URL.ifEmpty { BuildConfig.defaultAppUrl }.trimEnd('/')
+        val apkUrl = base + String.format(getString(R.string.xwalk_apk_link), abi)
+        logDebug("setupXWalkApkUrl: $apkUrl")
         mXWalkUpdater!!.setXWalkApkUrl(apkUrl)
     }
 

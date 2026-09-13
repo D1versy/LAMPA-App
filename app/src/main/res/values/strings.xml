@@ -84,7 +84,12 @@
     <string name="xwalk_continue">Продолжить</string>
     <string name="xwalk_close">Отмена</string>
     <string name="xwalk_retry">Повтор</string>
-    <string name="xwalk_apk_link">https://github.com/lampa-app/LAMPA/releases/download/1.1.0/XWalkRuntimeLib_%s.apk</string>
+    <!-- D1Vision: ПУТЬ на нашем сервере, а не абсолютный адрес. Хост подставляет
+         setupXWalkApkUrl() из того сервера, с которым клиент сейчас работает.
+         Раньше здесь был github.com/lampa-app/LAMPA — то есть страховка от сломанного
+         системного WebView висела на чужом релизе. Файлы у нас: client-builds/xwalk/.
+         %s — ABI (arm64-v8a | armeabi-v7a), подставляет MyXWalkEnvironment. -->
+    <string name="xwalk_apk_link" translatable="false">/d1vision/apps/xwalk/XWalkRuntimeLib_%s.apk</string>
     <!--Search-->
     <string name="open_lampa">открой д1вижн</string>
     <string name="open_settings">открой настройки д1вижн</string>
