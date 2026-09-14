@@ -357,7 +357,12 @@ class PlayerActivity : BaseActivity() {
 
         Log.i(TAG, "playItem[$index] ${item.title ?: ""} seek=${pendingSeekMs}ms")
         val media = Media(libVLC, Uri.parse(signed))
-        media.addOption(":network-caching=1500")
+        // 3 с, а не прежние 1.5: запас на дорогу от сервера до экрана. Причина фризов в
+        // XSMART была серверная (прокси не тянул вперёд, и сегмент приезжал дольше, чем
+        // играл) и лечится там же, но на сотовой и по Wi-Fi полутора секунд всё равно мало.
+        // Больше не ставим: это ещё и время до первой картинки. Паритет с win/mac/iOS —
+        // tests/fixtures/parity/player-thresholds.json.
+        media.addOption(":network-caching=3000")
         player.media = media
         media.release()
         player.play()
