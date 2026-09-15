@@ -11,9 +11,9 @@
     "value": "lampa_client",
     "why": "замок 2: без него Platform.init не ставит platform=android (автодетекции по window.AndroidJS нет)"
   },
-  "platformTokenRegex": "lampa_client d1vision_(mac|ios|android|windows)/\\d+\\.\\d+\\.\\d+-\\d+",
+  "platformTokenRegex": "lampa_client d1vision_(mac|ios|tvos|android|windows)/\\d+\\.\\d+\\.\\d+-\\d+",
   "tokenMustFollowClientToken": true,
-  "platforms": ["mac", "ios", "android", "tizen", "windows"],
+  "platforms": ["mac", "ios", "tvos", "android", "tizen", "windows"],
   "phoneUsesAndroidToken": {
     "about": "Телефонная Android-сборка НЕ вводит своей платформы: тот же токен d1vision_android и тот же ключ d1v.keys.android. Отдельный токен лишил бы телефон периметра и включил бы мобильный профиль, которого владелец не хочет.",
     "otaChannel": "androidphone",
